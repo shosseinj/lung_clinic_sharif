@@ -5,19 +5,35 @@
       "name": "Python: Run DICOM to NumPy",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/main.py",
+      "program": "${workspaceFolder}/registration.py",
       "console": "integratedTerminal",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "args": [
-        "--dcm2npy",
-        "True",
-        "--input_dir",
-        "./data/single_patient_dcm/",
-        "--output_dir",
-        "./output/"
-      ],
+      "args": ["--inhale_dir", "./data/SR_2/", "--exhale_dir", "./data/SR_3/", "--output_dir", "./registration_result1"],
       "cwd": "${workspaceFolder}",
       "justMyCode": true
     }
   ]
 }
+// {
+//   "version": "0.2.0",
+//   "configurations": [
+//     {
+//       "name": "Python: Run DICOM to NumPy",
+//       "type": "debugpy",
+//       "request": "launch",
+//       "program": "${workspaceFolder}/main.py",
+//       "console": "integratedTerminal",
+//       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+//       "args": [
+//         "--dcm2npy",
+//         "True",
+//         "--input_dir",
+//         "./data/single_patient_dcm/",
+//         "--output_dir",
+//         "./output/"
+//       ],
+//       "cwd": "${workspaceFolder}",
+//       "justMyCode": true
+//     }
+//   ]
+// }
