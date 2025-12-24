@@ -5,43 +5,244 @@ import SimpleITK as sitk
 import argparse
 import pydicom
 from pathlib import Path
+import SimpleITK as sitk
 
-def load_paired_ct_scans(inhale_dir, exhale_dir):
+
+
+
+
+
+
+
+
+
+
+
+
+
+# def load_paired_ct_scans(inhale_dir, exhale_dir):
+#     """
+#     Load paired inhale and exhale CT scans from DICOM directories
+#     Handles different slice counts by resampling to common space
+#     """
+#     import SimpleITK as sitk
+
+#     def load_volume(dicom_dir):
+#         reader = sitk.ImageSeriesReader()
+#         series_ids = reader.GetGDCMSeriesIDs(dicom_dir)
+
+#         if not series_ids:
+#             raise RuntimeError("No DICOM series found")
+
+#         # choose the series with MOST slices
+#         best_id = None
+#         max_slices = 0
+
+#         for sid in series_ids:
+#             files = reader.GetGDCMSeriesFileNames(dicom_dir, sid)
+#             if len(files) > max_slices:
+#                 max_slices = len(files)
+#                 best_id = sid
+
+#         files = reader.GetGDCMSeriesFileNames(dicom_dir, best_id)
+#         reader.SetFileNames(files)
+
+#         volume = reader.Execute()
+#         print("Loaded volume:", volume.GetSize())
+#         spacing = volume.GetSpacing()
+#         origin = volume.GetOrigin()
+#         direction = volume.GetDirection()
+        
+#         print(f"Loaded series with shape: {volume.GetSize()}")
+#         print(f"Spacing: {spacing}, Origin: {origin} , direction: {direction}")
+#         return volume
+
+    
+#     def load_dicom_series(dicom_dir):
+#         """Load complete DICOM series as 3D volume"""
+#         reader = sitk.ImageSeriesReader()
+#         dicom_files = reader.GetGDCMSeriesFileNames(dicom_dir)
+#         reader.SetFileNames(dicom_files)
+        
+#         # Important: Sort by slice location
+#         reader.MetaDataDictionaryArrayUpdateOn()
+#         reader.LoadPrivateTagsOn()
+        
+#         image = reader.Execute()
+        
+#         # Get DICOM metadata
+#         spacing = image.GetSpacing()
+#         origin = image.GetOrigin()
+#         direction = image.GetDirection()
+        
+#         print(f"Loaded series with shape: {image.GetSize()}")
+#         print(f"Spacing: {spacing}, Origin: {origin}")
+        
+#         return image
+    
+#     # Load both scans
+#     print(f"Loading inhale scan from: {inhale_dir}")
+#     # inhale_sitk = load_dicom_series(inhale_dir)
+#     inhale_sitk = load_volume(inhale_dir)
+    
+#     print(f"\nLoading exhale scan from: {exhale_dir}")
+#     # exhale_sitk = load_dicom_series(exhale_dir)
+#     exhale_sitk = load_volume(exhale_dir)
+    
+#     return inhale_sitk, exhale_sitk
+
+
+
+import os
+import SimpleITK as sitk
+
+
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
+def load_paired_ct_scans(inhale_dir, exhale_dir, target_spacing=(1.0,1.0,1.0)):
     """
-    Load paired inhale and exhale CT scans from DICOM directories
-    Handles different slice counts by resampling to common space
+    Load paired inhale and exhale CT scans from DICOM directories.
+    Automatically selects the series with the most slices.
+    Resamples to isotropic spacing and registers exhale to inhale.
+    
+    Args:
+        inhale_dir (str): Path to inhale DICOM folder
+        exhale_dir (str): Path to exhale DICOM folder
+        target_spacing (tuple): Spacing for resampling (x,y,z), default (1,1,1)
+        
+    Returns:
+        inhale_resampled (SimpleITK.Image): Inhale volume resampled to target spacing
+        exhale_registered (SimpleITK.Image): Exhale volume registered to inhale
     """
-    
-    def load_dicom_series(dicom_dir):
-        """Load complete DICOM series as 3D volume"""
-        reader = sitk.ImageSeriesReader()
-        dicom_files = reader.GetGDCMSeriesFileNames(dicom_dir)
-        reader.SetFileNames(dicom_files)
-        
-        # Important: Sort by slice location
-        reader.MetaDataDictionaryArrayUpdateOn()
-        reader.LoadPrivateTagsOn()
-        
-        image = reader.Execute()
-        
-        # Get DICOM metadata
-        spacing = image.GetSpacing()
-        origin = image.GetOrigin()
-        direction = image.GetDirection()
-        
-        print(f"Loaded series with shape: {image.GetSize()}")
-        print(f"Spacing: {spacing}, Origin: {origin}")
-        
-        return image
-    
-    # Load both scans
-    print(f"Loading inhale scan from: {inhale_dir}")
-    inhale_sitk = load_dicom_series(inhale_dir)
-    
-    print(f"\nLoading exhale scan from: {exhale_dir}")
-    exhale_sitk = load_dicom_series(exhale_dir)
-    
-    return inhale_sitk, exhale_sitk
+
+    # -----------------------------
+    # Helper: Collect all DICOM files in a folder
+    # -----------------------------
+    def collect_dicom_files(dicom_dir):
+        dicom_files = []
+        for root, dirs, files in os.walk(dicom_dir):
+            for file in files:
+                if file.lower().endswith('.dcm'):
+                    dicom_files.append(os.path.join(root, file))
+        if not dicom_files:
+            raise RuntimeError(f"No DICOM files found in {dicom_dir}")
+        return dicom_files
+
+    # -----------------------------
+    # Helper: Select the series with the most slices
+    # -----------------------------
+    def select_largest_series(dicom_files):
+        series_dict = {}
+        for f in dicom_files:
+            img = sitk.ReadImage(f)
+            series_uid = img.GetMetaData("0020|000E") if img.HasMetaDataKey("0020|000E") else "unknown"
+            if series_uid not in series_dict:
+                series_dict[series_uid] = []
+            series_dict[series_uid].append(f)
+        best_uid = max(series_dict, key=lambda uid: len(series_dict[uid]))
+        return sorted(series_dict[best_uid])
+
+    # -----------------------------
+    # Helper: Resample to isotropic spacing
+    # -----------------------------
+    def resample_volume(img, new_spacing):
+        orig_spacing = img.GetSpacing()
+        orig_size = img.GetSize()
+        new_size = [
+            int(round(osz * ospc / nspc))
+            for osz, ospc, nspc in zip(orig_size, orig_spacing, new_spacing)
+        ]
+        return sitk.Resample(
+            img,
+            new_size,
+            sitk.Transform(),
+            sitk.sitkLinear,
+            img.GetOrigin(),
+            new_spacing,
+            img.GetDirection(),
+            0,
+            sitk.sitkFloat32
+        )
+
+    # -----------------------------
+    # Step 1: Collect DICOM files
+    # -----------------------------
+    inhale_files = collect_dicom_files(inhale_dir)
+    exhale_files = collect_dicom_files(exhale_dir)
+
+    # -----------------------------
+    # Step 2: Select largest series
+    # -----------------------------
+    inhale_series = select_largest_series(inhale_files)
+    exhale_series = select_largest_series(exhale_files)
+
+    print(f"Selected inhale series with {len(inhale_series)} slices")
+    print(f"Selected exhale series with {len(exhale_series)} slices")
+
+    # -----------------------------
+    # Step 3: Load volumes
+    # -----------------------------
+    reader = sitk.ImageSeriesReader()
+    reader.SetFileNames(inhale_series)
+    inhale = reader.Execute()
+    reader.SetFileNames(exhale_series)
+    exhale = reader.Execute()
+
+    print(f"Original inhale shape: {inhale.GetSize()}, Exhale shape: {exhale.GetSize()}")
+
+    # -----------------------------
+    # Step 4: Cast to float32
+    # -----------------------------
+    inhale = sitk.Cast(inhale, sitk.sitkFloat32)
+    exhale = sitk.Cast(exhale, sitk.sitkFloat32)
+
+    # -----------------------------
+    # Step 5: Resample to isotropic spacing
+    # -----------------------------
+    inhale_resampled = resample_volume(inhale, target_spacing)
+    exhale_resampled = resample_volume(exhale, target_spacing)
+
+    print(f"Resampled inhale shape: {inhale_resampled.GetSize()}, Exhale shape: {exhale_resampled.GetSize()}")
+
+    # -----------------------------
+    # Step 6: Register exhale -> inhale
+    # -----------------------------
+    initial_transform = sitk.CenteredTransformInitializer(
+        inhale_resampled,
+        exhale_resampled,
+        sitk.Euler3DTransform(),
+        sitk.CenteredTransformInitializerFilter.GEOMETRY
+    )
+
+    registration = sitk.ImageRegistrationMethod()
+    registration.SetMetricAsMattesMutualInformation(50)
+    registration.SetInterpolator(sitk.sitkLinear)
+    registration.SetOptimizerAsGradientDescent(learningRate=1.0, numberOfIterations=50)
+    registration.SetInitialTransform(initial_transform, inPlace=False)
+
+    final_transform = registration.Execute(inhale_resampled, exhale_resampled)
+
+    exhale_registered = sitk.Resample(
+        exhale_resampled,
+        inhale_resampled,
+        final_transform,
+        sitk.sitkLinear,
+        -1000,
+        sitk.sitkFloat32
+    )
+
+    print("Registration complete.")
+    print(f"Inhale shape: {inhale_resampled.GetSize()}, Exhale registered shape: {exhale_registered.GetSize()}")
+
+    return inhale_resampled, exhale_registered
 
 def preprocess_for_registration(inhale_sitk, exhale_sitk):
     """
