@@ -3,6 +3,7 @@ import numpy as np
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
 import os
+from lungmask import mask, LMInferer
 
 def calculate_air_trapping(exhale_sitk, inhale_sitk, output_dir=None):
     """
@@ -604,16 +605,6 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
     print(f"  Translation offset (mm): {translation_mm}")
 
 
-
-    # -------------------------------------------------
-# 4.  ANTsPy rigid translation (replaces SimpleITK)
-# -------------------------------------------------
-# -------------------------------------------------
-# 4.  ANTsPy rigid translation (replaces SimpleITK)
-# -------------------------------------------------
-# -------------------------------------------------
-# 4.  ANTsPy rigid translation (no initial guess)
-# -------------------------------------------------
     import ants, numpy as np, tempfile, os
 
     print("\n" + "="*60)
@@ -686,25 +677,22 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
     print(f"  Size: {inhale_registered.GetSize()}")
 
     # quick difference visual
-    ex_arr  = sitk.GetArrayFromImage(exhale_sitk)
-    in_arr  = sitk.GetArrayFromImage(inhale_registered)
-    diff    = ex_arr.astype(np.int16) - in_arr.astype(np.int16)
-    mid     = diff.shape[0]//2
-    plt.imshow(diff[mid], cmap='seismic', vmin=-500, vmax=500)
-    plt.colorbar(); plt.title('Exhale - Inhale (ANTs)'); plt.show()
+    # ex_arr  = sitk.GetArrayFromImage(exhale_sitk)
+    # in_arr  = sitk.GetArrayFromImage(inhale_registered)
+    # diff    = ex_arr.astype(np.int16) - in_arr.astype(np.int16)
+    # mid     = diff.shape[0]//2
+    # plt.imshow(diff[mid], cmap='seismic', vmin=-500, vmax=500)
+    # plt.colorbar(); plt.title('Exhale - Inhale (ANTs)'); plt.show()
+    return exhale_sitk, inhale_registered
 
 
 
-
-
-
-    
-
+def run_visualization_sitk(exhale_sitk, inhale_registered):
 
     fixed_arr = sitk.GetArrayFromImage(exhale_sitk )
     moving_arr = sitk.GetArrayFromImage(inhale_registered)
     
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axes = plt.subplots(2, 4, figsize=(12, 10))
     
     # Middle slices
     mid_z = fixed_arr.shape[0] // 2
@@ -715,18 +703,23 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
     axes[0,1].imshow(moving_arr[mid_z], cmap='gray', vmin=-1000, vmax=200)
     axes[0,1].set_title(f'Moving (slice {mid_z})')
     
-    # Overlay
-    axes[1,0].imshow(fixed_arr[mid_z], cmap='gray', vmin=-1000, vmax=200, alpha=0.5)
-    axes[1,0].imshow(moving_arr[mid_z], cmap='hot', alpha=0.5)
-    axes[1,0].set_title('Overlay (Fixed gray, Moving hot)')
+ 
+
+    diff = fixed_arr[mid_z].astype(np.int16) - moving_arr[mid_z].astype(np.int16)
+    axes[0,2].imshow(diff, cmap='seismic', vmin=-500, vmax=500) 
+    axes[0,2].set_title('Exhale - Inhale '); 
+
+    axes[0,3].imshow(fixed_arr[mid_z], cmap='gray', vmin=-1000, vmax=200, alpha=0.5)
+    axes[0,3].imshow(moving_arr[mid_z], cmap='hot', alpha=0.5)
+    axes[0,3].set_title('Overlay (Fixed gray, Moving hot)')
     
     # Histogram comparison
-    axes[1,1].hist(fixed_arr.flatten(), bins=100, alpha=0.5, label='Fixed', range=(-1200, 200))
-    axes[1,1].hist(moving_arr.flatten(), bins=100, alpha=0.5, label='Moving', range=(-1200, 200))
-    axes[1,1].set_title('HU Histogram Comparison')
-    axes[1,1].legend()
-    axes[1,1].set_xlabel('HU Value')
-    axes[1,1].set_ylabel('Frequency')
+    axes[1,3].hist(fixed_arr.flatten(), bins=100, alpha=0.5, label='Fixed', range=(-1200, 200))
+    axes[1,3].hist(moving_arr.flatten(), bins=100, alpha=0.5, label='Moving', range=(-1200, 200))
+    axes[1,3].set_title('HU Histogram Comparison')
+    axes[1,3].legend()
+    axes[1,3].set_xlabel('HU Value')
+    axes[1,3].set_ylabel('Frequency')
     
     plt.tight_layout()
     plt.savefig('diagnostic_report.png', dpi=150)
@@ -734,7 +727,6 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
 
 
 
-    return exhale_sitk, inhale_registered
 
 
 
@@ -1269,7 +1261,7 @@ def run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir="./air_trapping
     # 1. Load and register images
     print("\n1. LOADING AND REGISTERING IMAGES")
     exhale_sitk, inhale_registered_sitk = load_paired_ct_scans(inhale_dir, exhale_dir)
-    # run_diagnostics(exhale_sitk, inhale_registered_sitk)
+    run_visualization_sitk(exhale_sitk, inhale_registered_sitk)
     # 2. Calculate air trapping
     print("\n2. ANALYZING AIR TRAPPING")
     results = calculate_air_trapping(exhale_sitk, inhale_registered_sitk, output_dir)
