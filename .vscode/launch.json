@@ -5,7 +5,7 @@
       "name": "Python: Run DICOM to NumPy",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/registration.py",
+      "program": "${workspaceFolder}/reg.py",
       "console": "integratedTerminal",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "args": ["--inhale_dir", "./data/SR_2/", "--exhale_dir", "./data/SR_3/", "--output_dir", "./registration_result1"],

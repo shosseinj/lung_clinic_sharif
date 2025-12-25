@@ -1250,6 +1250,94 @@ def create_summary_report(output_dir):
     
     print(f"   Summary report: {report_path}")
 
+
+
+from lungmask import LMInferer   # pip install lungmask
+
+def run_segmentation(exhale_sitk, inhale_registered_sitk):
+    """
+    3-D lung segmentation for both volumes (slice-wise 2-D).
+    Returns:
+        exhale_lung_mask      : uint8  (26,512,512)  1=lung 0=background
+        exhale_lung_only      : float32(26,512,512)  HU inside lung only
+        inhale_lung_mask      : uint8  (26,512,512)
+        inhale_lung_only      : float32(26,512,512)
+    """
+    inferer = LMInferer()
+
+    def seg_volume(sitk_img):
+        arr      = sitk.GetArrayFromImage(sitk_img)       
+        lung_out = np.zeros(arr.shape, dtype=np.float32)
+        seg = inferer.apply(arr)                      
+
+    
+
+        return seg, lung_out
+
+    # ---------- process both volumes ----------
+    exhale_mask, exhale_only = seg_volume(exhale_sitk)
+    inhale_mask, inhale_only = seg_volume(inhale_registered_sitk)
+
+    print("Lung segmentation finished")
+    print("Exhale lung voxels:", exhale_mask.sum())
+    print("Inhale lung voxels:", inhale_mask.sum())
+
+    return exhale_mask, exhale_only, inhale_mask, inhale_only
+
+def run_interactive_segmentation_viewer(exhale_sitk, inhale_registered_sitk,
+                                        exhale_mask, inhale_mask):
+    """
+    Interactive slice-by-slice viewer:
+        row0: exhale, inhale-registered, exhale-mask overlay, difference
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.widgets import Slider
+
+    # 3-D arrays
+    fix    = sitk.GetArrayFromImage(exhale_sitk)
+    mov    = sitk.GetArrayFromImage(inhale_registered_sitk)
+    fix_m  = exhale_mask
+    mov_m  = inhale_mask
+    diff   = fix.astype(np.int16) - mov.astype(np.int16)
+
+    nz = fix.shape[0]
+    win = (-1000, 200)
+
+    # ---- create figure ----
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+    plt.subplots_adjust(bottom=0.25)
+    for ax in axes:
+        ax.axis('off')
+
+    # ---- initial slice ----
+    z = nz // 2
+    im0 = axes[0].imshow(fix[z], cmap='gray', vmin=win[0], vmax=win[1])
+    im1 = axes[1].imshow(mov[z], cmap='gray', vmin=win[0], vmax=win[1])
+    im2 = axes[2].imshow(fix[z], cmap='gray', vmin=win[0], vmax=win[1])
+    im2m = axes[2].imshow(fix_m[z], cmap='Reds', alpha=0.4)
+    im3 = axes[3].imshow(diff[z], cmap='seismic', vmin=-500, vmax=500)
+
+    axes[0].set_title('Exhale')
+    axes[1].set_title('Inhale (registered)')
+    axes[2].set_title('Exhale + lung mask')
+    axes[3].set_title('Difference')
+
+    # ---- slider ----
+    ax_slider = plt.axes([0.2, 0.1, 0.5, 0.03])
+    slider = Slider(ax_slider, 'Slice', 0, nz - 1, valinit=z, valfmt='%0.0f')
+
+    def update(val):
+        z = int(slider.val)
+        im0.set_data(fix[z])
+        im1.set_data(mov[z])
+        im2.set_data(fix[z])
+        im2m.set_data(fix_m[z])
+        im3.set_data(diff[z])
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
+    plt.show()
+
 def run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir="./air_trapping_results"):
     """
     Complete pipeline for air trapping analysis
@@ -1262,6 +1350,13 @@ def run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir="./air_trapping
     print("\n1. LOADING AND REGISTERING IMAGES")
     exhale_sitk, inhale_registered_sitk = load_paired_ct_scans(inhale_dir, exhale_dir)
     run_visualization_sitk(exhale_sitk, inhale_registered_sitk)
+    exhale_mask, exhale_lung, inhale_mask, inhale_lung = run_segmentation(exhale_sitk, inhale_registered_sitk)
+    run_interactive_segmentation_viewer(exhale_sitk,
+                                    inhale_registered_sitk,
+                                    exhale_mask,
+                                    inhale_mask)
+    
+
     # 2. Calculate air trapping
     print("\n2. ANALYZING AIR TRAPPING")
     results = calculate_air_trapping(exhale_sitk, inhale_registered_sitk, output_dir)
