@@ -20,229 +20,789 @@ import SimpleITK as sitk
 
 
 
+import os
+import SimpleITK as sitk
+
+
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
+import os
+import SimpleITK as sitk
+
 # def load_paired_ct_scans(inhale_dir, exhale_dir):
 #     """
-#     Load paired inhale and exhale CT scans from DICOM directories
-#     Handles different slice counts by resampling to common space
+#     Load paired inhale and exhale CT scans from DICOM directories.
+#     Preserves original HU values and handles different slice counts.
 #     """
+#     import numpy as np
+#     import os
 #     import SimpleITK as sitk
-
-#     def load_volume(dicom_dir):
-#         reader = sitk.ImageSeriesReader()
-#         series_ids = reader.GetGDCMSeriesIDs(dicom_dir)
-
-#         if not series_ids:
-#             raise RuntimeError("No DICOM series found")
-
-#         # choose the series with MOST slices
-#         best_id = None
-#         max_slices = 0
-
-#         for sid in series_ids:
-#             files = reader.GetGDCMSeriesFileNames(dicom_dir, sid)
-#             if len(files) > max_slices:
-#                 max_slices = len(files)
-#                 best_id = sid
-
-#         files = reader.GetGDCMSeriesFileNames(dicom_dir, best_id)
-#         reader.SetFileNames(files)
-
-#         volume = reader.Execute()
-#         print("Loaded volume:", volume.GetSize())
-#         spacing = volume.GetSpacing()
-#         origin = volume.GetOrigin()
-#         direction = volume.GetDirection()
-        
-#         print(f"Loaded series with shape: {volume.GetSize()}")
-#         print(f"Spacing: {spacing}, Origin: {origin} , direction: {direction}")
-#         return volume
-
+#     import pydicom
     
-#     def load_dicom_series(dicom_dir):
-#         """Load complete DICOM series as 3D volume"""
-#         reader = sitk.ImageSeriesReader()
-#         dicom_files = reader.GetGDCMSeriesFileNames(dicom_dir)
-#         reader.SetFileNames(dicom_files)
-        
-#         # Important: Sort by slice location
-#         reader.MetaDataDictionaryArrayUpdateOn()
-#         reader.LoadPrivateTagsOn()
-        
-#         image = reader.Execute()
-        
-#         # Get DICOM metadata
-#         spacing = image.GetSpacing()
-#         origin = image.GetOrigin()
-#         direction = image.GetDirection()
-        
-#         print(f"Loaded series with shape: {image.GetSize()}")
-#         print(f"Spacing: {spacing}, Origin: {origin}")
-        
-#         return image
+#     print("\n" + "="*60)
+#     print("LOADING PAIRED CT SCANS")
+#     print("="*60)
     
-#     # Load both scans
-#     print(f"Loading inhale scan from: {inhale_dir}")
-#     # inhale_sitk = load_dicom_series(inhale_dir)
-#     inhale_sitk = load_volume(inhale_dir)
+#     # -------------------------------------------------
+#     # 1. Enhanced DICOM loader with proper HU conversion
+#     # -------------------------------------------------
+#     def load_ct_series(dicom_dir, series_name="unknown"):
+#         """Load CT series with proper HU conversion and metadata"""
+#         print(f"\nLoading {series_name} CT series from: {dicom_dir}")
+        
+#         # Find DICOM files
+#         dicom_files = []
+#         for root, dirs, files in os.walk(dicom_dir):
+#             for file in files:
+#                 if file.lower().endswith('.dcm') or file.lower().endswith('.dicom'):
+#                     dicom_files.append(os.path.join(root, file))
+        
+#         if not dicom_files:
+#             raise RuntimeError(f"No DICOM files found in {dicom_dir}")
+        
+#         print(f"  Found {len(dicom_files)} DICOM files")
+        
+#         # Group by series
+#         series_dict = {}
+#         for file_path in dicom_files:
+#             try:
+#                 ds = pydicom.dcmread(file_path, force=True, stop_before_pixels=False)
+                
+#                 # Get series UID
+#                 series_uid = ds.SeriesInstanceUID if hasattr(ds, 'SeriesInstanceUID') else "unknown"
+                
+#                 # Get slice position for sorting
+#                 if hasattr(ds, 'SliceLocation'):
+#                     position = float(ds.SliceLocation)
+#                 elif hasattr(ds, 'ImagePositionPatient'):
+#                     position = float(ds.ImagePositionPatient[2])
+#                 elif hasattr(ds, 'InstanceNumber'):
+#                     position = float(ds.InstanceNumber)
+#                 else:
+#                     position = len(series_dict.get(series_uid, []))
+                
+#                 series_dict.setdefault(series_uid, []).append((file_path, ds, position))
+                
+#             except Exception as e:
+#                 print(f"  Warning: Could not read {os.path.basename(file_path)}: {e}")
+#                 continue
+        
+#         if not series_dict:
+#             raise RuntimeError("No valid DICOM files could be read")
+        
+#         # Select series with most slices
+#         best_uid = max(series_dict, key=lambda uid: len(series_dict[uid]))
+#         series_data = series_dict[best_uid]
+        
+#         print(f"  Selected series with {len(series_data)} slices")
+        
+#         # Sort by position
+#         series_data.sort(key=lambda x: x[2])
+        
+#         # Load first slice to get metadata
+#         first_ds = series_data[0][1]
+        
+#         # Get dimensions
+#         rows = int(first_ds.Rows)
+#         cols = int(first_ds.Columns)
+#         num_slices = len(series_data)
+        
+#         print(f"  Dimensions: {cols} x {rows} x {num_slices}")
+        
+#         # Create empty volume
+#         volume = np.zeros((num_slices, rows, cols), dtype=np.float32)
+        
+#         # Get spacing
+#         if hasattr(first_ds, 'PixelSpacing'):
+#             spacing_x = float(first_ds.PixelSpacing[0])
+#             spacing_y = float(first_ds.PixelSpacing[1])
+#         else:
+#             spacing_x = spacing_y = 1.0
+#             print("  Warning: No PixelSpacing found, using 1.0 mm")
+        
+#         # Get slice spacing
+#         if len(series_data) > 1:
+#             positions = [pos for _, _, pos in series_data]
+#             if len(set(positions)) > 1:
+#                 slice_spacing = abs(np.mean(np.diff(sorted(positions))))
+#             else:
+#                 slice_spacing = float(first_ds.SliceThickness) if hasattr(first_ds, 'SliceThickness') else 1.0
+#         else:
+#             slice_spacing = float(first_ds.SliceThickness) if hasattr(first_ds, 'SliceThickness') else 1.0
+        
+#         spacing = (spacing_x, spacing_y, slice_spacing)
+#         print(f"  Spacing: {spacing} mm")
+        
+#         # Load each slice with proper HU conversion
+#         print("  Converting to Hounsfield Units...")
+#         for i, (file_path, ds, _) in enumerate(series_data):
+#             try:
+#                 # Get pixel array
+#                 pixel_data = ds.pixel_array.astype(np.float32)
+                
+#                 # Apply rescale to get HU values
+#                 if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
+#                     slope = float(ds.RescaleSlope)
+#                     intercept = float(ds.RescaleIntercept)
+#                     pixel_data = pixel_data * slope + intercept
+#                 else:
+#                     print(f"  Warning: No RescaleSlope/Intercept in slice {i}, using raw values")
+                
+#                 # Store in volume
+#                 volume[i] = pixel_data
+                
+#             except Exception as e:
+#                 print(f"  Error processing slice {i}: {e}")
+#                 volume[i] = -1000  # Default air value
+        
+#         # Print HU statistics
+#         print(f"  HU Range: [{volume.min():.1f}, {volume.max():.1f}]")
+#         print(f"  HU Mean: {volume.mean():.1f} ± {volume.std():.1f}")
+        
+#         # Check for typical CT values
+#         air_pixels = volume < -900
+#         tissue_pixels = (volume > -500) & (volume < 500)
+        
+#         if np.sum(air_pixels) > 0:
+#             print(f"  Air (<-900 HU): {np.sum(air_pixels):,} voxels")
+#         if np.sum(tissue_pixels) > 0:
+#             print(f"  Soft tissue (-500 to 500 HU): {np.sum(tissue_pixels):,} voxels")
+        
+#         return volume, spacing
     
-#     print(f"\nLoading exhale scan from: {exhale_dir}")
-#     # exhale_sitk = load_dicom_series(exhale_dir)
-#     exhale_sitk = load_volume(exhale_dir)
+#     # -------------------------------------------------
+#     # 2. Load both CT series
+#     # -------------------------------------------------
+#     inhale_volume, inhale_spacing = load_ct_series(inhale_dir, "INHALE")
+#     exhale_volume, exhale_spacing = load_ct_series(exhale_dir, "EXHALE")
     
-#     return inhale_sitk, exhale_sitk
-
-
-
-import os
-import SimpleITK as sitk
-
-
-
-import os
-import SimpleITK as sitk
-
-import os
-import SimpleITK as sitk
-
-import os
-import SimpleITK as sitk
-
-def load_paired_ct_scans(inhale_dir, exhale_dir, target_spacing=(1.0,1.0,1.0)):
+#     # -------------------------------------------------
+#     # 3. Handle different slice counts - KEEP ORIGINAL VALUES
+#     # -------------------------------------------------
+#     print("\n" + "="*60)
+#     print("ALIGNING VOLUMES")
+#     print("="*60)
+    
+#     inhale_z, inhale_y, inhale_x = inhale_volume.shape
+#     exhale_z, exhale_y, exhale_x = exhale_volume.shape
+    
+#     print(f"Inhale: {inhale_volume.shape}, Spacing: {inhale_spacing}")
+#     print(f"Exhale: {exhale_volume.shape}, Spacing: {exhale_spacing}")
+    
+#     # Calculate physical extents
+#     inhale_extent_z = inhale_z * inhale_spacing[2]
+#     exhale_extent_z = exhale_z * exhale_spacing[2]
+    
+#     print(f"\nPhysical Z extent:")
+#     print(f"  Inhale: {inhale_extent_z:.1f} mm ({inhale_z} slices × {inhale_spacing[2]:.3f} mm)")
+#     print(f"  Exhale: {exhale_extent_z:.1f} mm ({exhale_z} slices × {exhale_spacing[2]:.3f} mm)")
+    
+#     # Option 1: Keep original slice counts, just match XY dimensions
+#     if inhale_z != exhale_z:
+#         print(f"\nNote: Different slice counts (inhale: {inhale_z}, exhale: {exhale_z})")
+#         print("We'll keep original Z dimensions and focus on XY alignment")
+    
+#     # Ensure XY dimensions match (should be 512x512)
+#     if (inhale_y, inhale_x) != (exhale_y, exhale_x):
+#         print(f"\nXY dimensions don't match: Inhale {inhale_y}x{inhale_x}, Exhale {exhale_y}x{exhale_x}")
+        
+#         # Find common dimensions (use minimum)
+#         target_y = min(inhale_y, exhale_y)
+#         target_x = min(inhale_x, exhale_x)
+        
+#         print(f"  Cropping both to: {target_y}x{target_x}")
+        
+#         # Crop inhale
+#         inhale_start_y = (inhale_y - target_y) // 2
+#         inhale_start_x = (inhale_x - target_x) // 2
+#         inhale_volume = inhale_volume[:, 
+#                                      inhale_start_y:inhale_start_y + target_y,
+#                                      inhale_start_x:inhale_start_x + target_x]
+        
+#         # Crop exhale
+#         exhale_start_y = (exhale_y - target_y) // 2
+#         exhale_start_x = (exhale_x - target_x) // 2
+#         exhale_volume = exhale_volume[:, 
+#                                      exhale_start_y:exhale_start_y + target_y,
+#                                      exhale_start_x:exhale_start_x + target_x]
+    
+#     # -------------------------------------------------
+#     # 4. Convert to SimpleITK - PRESERVE HU VALUES
+#     # -------------------------------------------------
+#     print("\n" + "="*60)
+#     print("CREATING SIMPLEITK IMAGES")
+#     print("="*60)
+    
+#     # Use consistent spacing (use exhale spacing as reference)
+#     final_spacing = exhale_spacing
+    
+#     print(f"Using spacing: {final_spacing}")
+#     print(f"Using origin: (0, 0, 0)")
+    
+#     # Create SimpleITK images DIRECTLY from numpy arrays
+#     # This preserves the original HU values
+#     exhale_sitk = sitk.GetImageFromArray(exhale_volume.astype(np.float32))
+#     exhale_sitk.SetSpacing(final_spacing)
+#     exhale_sitk.SetOrigin((0.0, 0.0, 0.0))
+    
+#     inhale_sitk = sitk.GetImageFromArray(inhale_volume.astype(np.float32))
+#     inhale_sitk.SetSpacing(final_spacing)
+#     inhale_sitk.SetOrigin((0.0, 0.0, 0.0))
+    
+#     # -------------------------------------------------
+#     # 5. Optional: Simple resampling if Z dimensions differ significantly
+#     # -------------------------------------------------
+#     if inhale_z != exhale_z:
+#         print(f"\nResampling inhale to match exhale Z dimension: {inhale_z} -> {exhale_z}")
+        
+#         # Calculate resampling factor
+#         z_ratio = exhale_z / inhale_z
+        
+#         # Simple resample using SimpleITK
+#         resampler = sitk.ResampleImageFilter()
+#         resampler.SetReferenceImage(exhale_sitk)  # Match exhale geometry
+#         resampler.SetInterpolator(sitk.sitkLinear)
+#         resampler.SetDefaultPixelValue(-1000.0)  # Air value for out of bounds
+#         resampler.SetOutputPixelType(sitk.sitkFloat32)
+        
+#         inhale_sitk = resampler.Execute(inhale_sitk)
+#         print(f"  Resampled inhale shape: {inhale_sitk.GetSize()}")
+    
+#     # -------------------------------------------------
+#     # 6. Verify HU values are preserved
+#     # -------------------------------------------------
+#     print("\n" + "="*60)
+#     print("VERIFICATION - CHECKING HU VALUES")
+#     print("="*60)
+    
+#     exhale_array = sitk.GetArrayFromImage(exhale_sitk)
+#     inhale_array = sitk.GetArrayFromImage(inhale_sitk)
+    
+#     print(f"\nEXHALE (Reference):")
+#     print(f"  Shape: {exhale_array.shape}")
+#     print(f"  Spacing: {exhale_sitk.GetSpacing()}")
+#     print(f"  HU Range: [{exhale_array.min():.1f}, {exhale_array.max():.1f}]")
+#     print(f"  HU Mean: {exhale_array.mean():.1f} ± {exhale_array.std():.1f}")
+    
+#     print(f"\nINHALE (Registered):")
+#     print(f"  Shape: {inhale_array.shape}")
+#     print(f"  Spacing: {inhale_sitk.GetSpacing()}")
+#     print(f"  HU Range: [{inhale_array.min():.1f}, {inhale_array.max():.1f}]")
+#     print(f"  HU Mean: {inhale_array.mean():.1f} ± {inhale_array.std():.1f}")
+    
+#     # Check for expected CT ranges
+#     print(f"\nCT VALUE ANALYSIS:")
+    
+#     for name, array in [("Exhale", exhale_array), ("Inhale", inhale_array)]:
+#         # Count voxels in typical ranges
+#         air = np.sum(array < -900)
+#         lung = np.sum((array > -950) & (array < -700))
+#         soft_tissue = np.sum((array > -500) & (array < 500))
+#         bone = np.sum(array > 300)
+        
+#         print(f"\n{name}:")
+#         print(f"  Air (<-900 HU): {air:,} voxels ({air/array.size*100:.1f}%)")
+#         print(f"  Lung tissue (-950 to -700 HU): {lung:,} voxels ({lung/array.size*100:.1f}%)")
+#         print(f"  Soft tissue (-500 to 500 HU): {soft_tissue:,} voxels ({soft_tissue/array.size*100:.1f}%)")
+#         print(f"  Bone (>300 HU): {bone:,} voxels ({bone/array.size*100:.1f}%)")
+        
+#         if air < 1000:
+#             print(f"  ⚠️  Warning: Very little air detected in {name}")
+#         if lung > 1000:
+#             print(f"  ✓ Good: Lung tissue detected in {name}")
+    
+#     # Final check
+#     print("\n" + "="*60)
+#     if abs(inhale_array.mean()) > 500 and abs(exhale_array.mean()) > 500:
+#         print("✅ SUCCESS: Both volumes have proper CT HU values!")
+#         print("   (Typical CT scans have mean around -500 to -700 HU for lung studies)")
+#     else:
+#         print("⚠️  WARNING: CT values may not be properly scaled")
+#         print("   Expected mean around -500 to -700 HU for lung CT")
+    
+#     return exhale_sitk, inhale_sitk
+def load_paired_ct_scans(inhale_dir, exhale_dir):
     """
     Load paired inhale and exhale CT scans from DICOM directories.
-    Automatically selects the series with the most slices.
-    Resamples to isotropic spacing and registers exhale to inhale.
-    
-    Args:
-        inhale_dir (str): Path to inhale DICOM folder
-        exhale_dir (str): Path to exhale DICOM folder
-        target_spacing (tuple): Spacing for resampling (x,y,z), default (1,1,1)
-        
-    Returns:
-        inhale_resampled (SimpleITK.Image): Inhale volume resampled to target spacing
-        exhale_registered (SimpleITK.Image): Exhale volume registered to inhale
+    Properly handles multiple slices per series.
     """
-
-    # -----------------------------
-    # Helper: Collect all DICOM files in a folder
-    # -----------------------------
-    def collect_dicom_files(dicom_dir):
+    import numpy as np
+    import os
+    import SimpleITK as sitk
+    import pydicom
+    
+    print("\n" + "="*60)
+    print("LOADING FULL CT VOLUMES")
+    print("="*60)
+    
+    # -------------------------------------------------
+    # 1. Improved DICOM series detection
+    # -------------------------------------------------
+    def load_full_ct_volume(dicom_dir, series_name="unknown"):
+        """Load complete CT volume with all slices"""
+        print(f"\nLoading {series_name} CT volume from: {dicom_dir}")
+        
+        # Try SimpleITK first for multi-slice loading
+        try:
+            print("  Attempting to load with SimpleITK ImageSeriesReader...")
+            
+            # Get all DICOM files
+            dicom_files = []
+            for root, dirs, files in os.walk(dicom_dir):
+                for file in files:
+                    if file.lower().endswith('.dcm') or file.lower().endswith('.dicom'):
+                        dicom_files.append(os.path.join(root, file))
+            
+            if not dicom_files:
+                raise RuntimeError(f"No DICOM files found in {dicom_dir}")
+            
+            print(f"  Found {len(dicom_files)} DICOM files")
+            
+            # Use SimpleITK to read series (handles multi-slice)
+            reader = sitk.ImageSeriesReader()
+            
+            # Get DICOM series IDs
+            series_ids = reader.GetGDCMSeriesIDs(dicom_dir)
+            print(f"  Found {len(series_ids)} DICOM series")
+            
+            if not series_ids:
+                raise RuntimeError("No DICOM series found")
+            
+            # Select first series (or the one with most files)
+            selected_series = series_ids[0]
+            if len(series_ids) > 1:
+                # Find series with most files
+                max_files = 0
+                for series_id in series_ids:
+                    series_files = reader.GetGDCMSeriesFileNames(dicom_dir, series_id)
+                    if len(series_files) > max_files:
+                        max_files = len(series_files)
+                        selected_series = series_id
+            
+            # Get all files for selected series
+            dicom_series_files = reader.GetGDCMSeriesFileNames(dicom_dir, selected_series)
+            print(f"  Selected series '{selected_series}' with {len(dicom_series_files)} slices")
+            
+            # Read the series
+            reader.SetFileNames(dicom_series_files)
+            image = reader.Execute()
+            
+            # Convert to float32 for HU values
+            image = sitk.Cast(image, sitk.sitkFloat32)
+            
+            # Apply rescale if needed (SimpleITK might already do this)
+            # For safety, we'll check a sample DICOM for rescale parameters
+            
+            # Get array and check
+            volume_array = sitk.GetArrayFromImage(image)  # Shape: (Z, Y, X)
+            
+            print(f"  Loaded volume shape: {volume_array.shape}")
+            print(f"  Spacing: {image.GetSpacing()}")
+            print(f"  Origin: {image.GetOrigin()}")
+            print(f"  HU Range: [{volume_array.min():.1f}, {volume_array.max():.1f}]")
+            print(f"  HU Mean: {volume_array.mean():.1f} ± {volume_array.std():.1f}")
+            
+            # Verify this is a proper CT volume (not just 1 slice)
+            if volume_array.shape[0] <= 1:
+                print(f"  ⚠️  Warning: Only {volume_array.shape[0]} slice(s) loaded")
+                print(f"  Trying manual DICOM loading...")
+                raise ValueError("Single slice detected")
+            
+            return image, volume_array
+            
+        except Exception as e:
+            print(f"  SimpleITK loading issue: {e}")
+            print("  Falling back to manual DICOM loading...")
+            
+            # Manual DICOM loading
+            return load_dicom_series_manually(dicom_dir, series_name)
+    
+    def load_dicom_series_manually(dicom_dir, series_name):
+        """Manual DICOM loading for problematic datasets"""
+        import pydicom
+        
+        print(f"  Manual loading of {series_name}...")
+        
+        # Get all DICOM files
         dicom_files = []
         for root, dirs, files in os.walk(dicom_dir):
             for file in files:
-                if file.lower().endswith('.dcm'):
+                if file.lower().endswith('.dcm') or file.lower().endswith('.dicom'):
                     dicom_files.append(os.path.join(root, file))
+        
         if not dicom_files:
             raise RuntimeError(f"No DICOM files found in {dicom_dir}")
-        return dicom_files
+        
+        print(f"  Found {len(dicom_files)} DICOM files")
+        
+        # Read all files and extract metadata
+        slices = []
+        for file_path in dicom_files:
+            try:
+                ds = pydicom.dcmread(file_path, force=True, stop_before_pixels=False)
+                
+                # Get necessary metadata
+                if hasattr(ds, 'ImagePositionPatient'):
+                    position = tuple(float(x) for x in ds.ImagePositionPatient)
+                elif hasattr(ds, 'SliceLocation'):
+                    position = (0, 0, float(ds.SliceLocation))
+                else:
+                    position = (0, 0, len(slices))
+                
+                slices.append({
+                    'path': file_path,
+                    'ds': ds,
+                    'position': position,
+                    'instance': int(ds.InstanceNumber) if hasattr(ds, 'InstanceNumber') else len(slices)
+                })
+                
+            except Exception as e:
+                print(f"    Warning: Could not read {os.path.basename(file_path)}: {e}")
+                continue
+        
+        if not slices:
+            raise RuntimeError("No valid DICOM slices found")
+        
+        print(f"  Successfully read {len(slices)} slices")
+        
+        # Sort by InstanceNumber or position
+        slices.sort(key=lambda x: x['instance'])
+        
+        # Get dimensions from first slice
+        first_ds = slices[0]['ds']
+        rows = int(first_ds.Rows)
+        cols = int(first_ds.Columns)
+        
+        print(f"  Slice dimensions: {cols} x {rows}")
+        print(f"  Number of slices: {len(slices)}")
+        
+        # Create volume
+        volume = np.zeros((len(slices), rows, cols), dtype=np.float32)
+        
+        # Get spacing
+        if hasattr(first_ds, 'PixelSpacing'):
+            spacing_x = float(first_ds.PixelSpacing[0])
+            spacing_y = float(first_ds.PixelSpacing[1])
+        else:
+            spacing_x = spacing_y = 1.0
+        
+        # Calculate slice spacing from positions
+        positions_z = [s['position'][2] for s in slices]
+        if len(positions_z) > 1:
+            unique_positions = sorted(set(positions_z))
+            if len(unique_positions) > 1:
+                slice_spacing = abs(np.mean(np.diff(unique_positions)))
+            else:
+                slice_spacing = float(first_ds.SliceThickness) if hasattr(first_ds, 'SliceThickness') else 1.0
+        else:
+            slice_spacing = float(first_ds.SliceThickness) if hasattr(first_ds, 'SliceThickness') else 1.0
+        
+        spacing = (spacing_x, spacing_y, slice_spacing)
+        
+        # Get origin from first slice
+        if hasattr(first_ds, 'ImagePositionPatient'):
+            origin = tuple(float(x) for x in first_ds.ImagePositionPatient)
+        else:
+            origin = (0.0, 0.0, 0.0)
+        
+        # Load each slice
+        print(f"  Loading and converting slices to HU...")
+        for i, slice_info in enumerate(slices):
+            ds = slice_info['ds']
+            
+            # Get pixel data
+            pixel_data = ds.pixel_array.astype(np.float32)
+            
+            # Apply rescale to get HU
+            if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
+                slope = float(ds.RescaleSlope)
+                intercept = float(ds.RescaleIntercept)
+                pixel_data = pixel_data * slope + intercept
+            
+            volume[i] = pixel_data
+            
+            # Progress
+            if (i + 1) % 10 == 0 or (i + 1) == len(slices):
+                print(f"    Loaded {i + 1}/{len(slices)} slices")
+        
+        # Create SimpleITK image
+        image = sitk.GetImageFromArray(volume.astype(np.float32))
+        image.SetSpacing(spacing)
+        image.SetOrigin(origin)
+        
+        print(f"  Created SimpleITK image with shape: {volume.shape}")
+        print(f"  Spacing: {spacing}")
+        print(f"  Origin: {origin}")
+        print(f"  HU Range: [{volume.min():.1f}, {volume.max():.1f}]")
+        
+        return image, volume
+    
+    # -------------------------------------------------
+    # 2. Load both CT volumes
+    # -------------------------------------------------
+    exhale_sitk, exhale_array = load_full_ct_volume(exhale_dir, "EXHALE")
+    inhale_sitk, inhale_array = load_full_ct_volume(inhale_dir, "INHALE")
+    
+    # -------------------------------------------------
+    # 3. Verify we have multiple slices
+    # -------------------------------------------------
+    print("\n" + "="*60)
+    print("VOLUME VERIFICATION")
+    print("="*60)
+    
+    print(f"\nEXHALE Volume:")
+    print(f"  Shape (Z,Y,X): {exhale_array.shape}")
+    print(f"  Number of slices: {exhale_array.shape[0]}")
+    print(f"  Slice dimensions: {exhale_array.shape[1]} x {exhale_array.shape[2]}")
+    
+    print(f"\nINHALE Volume:")
+    print(f"  Shape (Z,Y,X): {inhale_array.shape}")
+    print(f"  Number of slices: {inhale_array.shape[0]}")
+    print(f"  Slice dimensions: {inhale_array.shape[1]} x {inhale_array.shape[2]}")
+    
+    if exhale_array.shape[0] <= 3 or inhale_array.shape[0] <= 3:
+        print(f"\n⚠️  WARNING: Few slices detected!")
+        print(f"   This might affect registration quality.")
+        print(f"   Expected more slices for lung CT volumes.")
+    
+    # -------------------------------------------------
+    # 4. Resample inhale to match exhale geometry
+    # -------------------------------------------------
+    print("\n" + "="*60)
+    print("RESAMPLING FOR REGISTRATION")
+    print("="*60)
+    
+    # Calculate physical centers
+    def get_volume_center_physical(image):
+        size = image.GetSize()
+        center_idx = [size[0] / 2.0, size[1] / 2.0, size[2] / 2.0]
+        return image.TransformContinuousIndexToPhysicalPoint(center_idx)
+    
+    exhale_center = get_volume_center_physical(exhale_sitk)
+    inhale_center = get_volume_center_physical(inhale_sitk)
+    
+    print(f"\nPhysical centers before alignment:")
+    print(f"  Exhale center: [{exhale_center[0]:.1f}, {exhale_center[1]:.1f}, {exhale_center[2]:.1f}]")
+    print(f"  Inhale center: [{inhale_center[0]:.1f}, {inhale_center[1]:.1f}, {inhale_center[2]:.1f}]")
+    
+    # Calculate offset
+    offset = [
+        exhale_center[0] - inhale_center[0],
+        exhale_center[1] - inhale_center[1],
+        exhale_center[2] - inhale_center[2]
+    ]
+    
+    print(f"\nCenter offset (Exhale - Inhale):")
+    print(f"  X: {offset[0]:.2f} mm, Y: {offset[1]:.2f} mm, Z: {offset[2]:.2f} mm")
+    print(f"  Total: {np.sqrt(sum(o**2 for o in offset)):.2f} mm")
+    
+    # Resample inhale to exhale space
+    print(f"\nResampling inhale to match exhale geometry...")
+    
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(exhale_sitk)  # Use exhale as reference
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetDefaultPixelValue(-1000.0)
+    resampler.SetOutputPixelType(sitk.sitkFloat32)
+    
+    # If offset is significant, apply translation
+    if np.abs(offset[0]) > 5 or np.abs(offset[1]) > 5 or np.abs(offset[2]) > 5:
+        print(f"  Applying translation: {[-o for o in offset]}")
+        transform = sitk.TranslationTransform(3)
+        transform.SetOffset([-offset[0], -offset[1], -offset[2]])
+        resampler.SetTransform(transform)
+    
+    inhale_registered = resampler.Execute(inhale_sitk)
+    
+    # -------------------------------------------------
+    # 5. Verify registration
+    # -------------------------------------------------
+    print("\n" + "="*60)
+    print("REGISTRATION VERIFICATION")
+    print("="*60)
+    
+    inhale_registered_center = get_volume_center_physical(inhale_registered)
+    
+    print(f"\nPhysical centers after alignment:")
+    print(f"  Exhale center: [{exhale_center[0]:.1f}, {exhale_center[1]:.1f}, {exhale_center[2]:.1f}]")
+    print(f"  Inhale center: [{inhale_registered_center[0]:.1f}, {inhale_registered_center[1]:.1f}, {inhale_registered_center[2]:.1f}]")
+    
+    final_offset = [
+        exhale_center[0] - inhale_registered_center[0],
+        exhale_center[1] - inhale_registered_center[1],
+        exhale_center[2] - inhale_registered_center[2]
+    ]
+    
+    final_distance = np.sqrt(sum(o**2 for o in final_offset))
+    print(f"  Final center distance: {final_distance:.2f} mm")
+    
+    if final_distance < 10.0:
+        print(f"  ✓ Good alignment")
+    else:
+        print(f"  ⚠️  Alignment could be improved")
+    
+    # -------------------------------------------------
+    # 6. Final statistics
+    # -------------------------------------------------
+    print("\n" + "="*60)
+    print("FINAL STATISTICS")
+    print("="*60)
+    
+    exhale_array_final = sitk.GetArrayFromImage(exhale_sitk)
+    inhale_array_final = sitk.GetArrayFromImage(inhale_registered)
+    
+    print(f"\nEXHALE (Fixed):")
+    print(f"  Dimensions: {exhale_array_final.shape}")
+    print(f"  Voxels: {exhale_array_final.size:,}")
+    print(f"  HU Range: [{exhale_array_final.min():.1f}, {exhale_array_final.max():.1f}]")
+    
+    print(f"\nINHALE (Registered):")
+    print(f"  Dimensions: {inhale_array_final.shape}")
+    print(f"  Voxels: {inhale_array_final.size:,}")
+    print(f"  HU Range: [{inhale_array_final.min():.1f}, {inhale_array_final.max():.1f}]")
+    
+    # Check lung tissue
+    lung_mask_exhale = (exhale_array_final > -950) & (exhale_array_final < -700)
+    lung_mask_inhale = (inhale_array_final > -950) & (inhale_array_final < -700)
+    
+    lung_volume_exhale = np.sum(lung_mask_exhale) * np.prod(exhale_sitk.GetSpacing()) / 1000  # in ml
+    lung_volume_inhale = np.sum(lung_mask_inhale) * np.prod(inhale_registered.GetSpacing()) / 1000
+    
+    print(f"\nLUNG TISSUE ANALYSIS:")
+    print(f"  Exhale lung volume: {lung_volume_exhale:.1f} ml")
+    print(f"  Inhale lung volume: {lung_volume_inhale:.1f} ml")
+    print(f"  Volume ratio (inhale/exhale): {lung_volume_inhale/lung_volume_exhale:.2f}")
+    
+    # Typical values: inhale volume should be larger
+    if lung_volume_inhale > lung_volume_exhale * 1.1:
+        print(f"  ✓ Expected: Inhale volume > Exhale volume")
+    elif lung_volume_inhale < lung_volume_exhale:
+        print(f"  ⚠️  Unexpected: Inhale volume < Exhale volume")
+    
+    print("\n" + "="*60)
+    if final_distance < 15.0 and lung_volume_inhale > 0 and lung_volume_exhale > 0:
+        print("✅ REGISTRATION COMPLETE")
+        print("   Volumes are aligned and ready for air trapping analysis")
+    else:
+        print("⚠️  CHECK REGISTRATION")
+        print("   Manual verification recommended")
+    
+    return exhale_sitk, inhale_registered
 
-    # -----------------------------
-    # Helper: Select the series with the most slices
-    # -----------------------------
-    def select_largest_series(dicom_files):
-        series_dict = {}
-        for f in dicom_files:
-            img = sitk.ReadImage(f)
-            series_uid = img.GetMetaData("0020|000E") if img.HasMetaDataKey("0020|000E") else "unknown"
-            if series_uid not in series_dict:
-                series_dict[series_uid] = []
-            series_dict[series_uid].append(f)
-        best_uid = max(series_dict, key=lambda uid: len(series_dict[uid]))
-        return sorted(series_dict[best_uid])
 
-    # -----------------------------
-    # Helper: Resample to isotropic spacing
-    # -----------------------------
-    def resample_volume(img, new_spacing):
-        orig_spacing = img.GetSpacing()
-        orig_size = img.GetSize()
-        new_size = [
-            int(round(osz * ospc / nspc))
-            for osz, ospc, nspc in zip(orig_size, orig_spacing, new_spacing)
-        ]
-        return sitk.Resample(
-            img,
-            new_size,
-            sitk.Transform(),
-            sitk.sitkLinear,
-            img.GetOrigin(),
-            new_spacing,
-            img.GetDirection(),
-            0,
-            sitk.sitkFloat32
-        )
+# Quick test function to see what's in the directories
+def inspect_dicom_directories(inhale_dir, exhale_dir):
+    """Inspect what's in the DICOM directories"""
+    import os
+    
+    print("\n" + "="*60)
+    print("DICOM DIRECTORY INSPECTION")
+    print("="*60)
+    
+    for dir_name, dir_path in [("INHALE", inhale_dir), ("EXHALE", exhale_dir)]:
+        print(f"\n{dir_name} directory: {dir_path}")
+        
+        # List files
+        all_files = []
+        dcm_files = []
+        
+        for root, dirs, files in os.walk(dir_path):
+            for file in files:
+                all_files.append(file)
+                if file.lower().endswith('.dcm') or file.lower().endswith('.dicom'):
+                    dcm_files.append(os.path.join(root, file))
+        
+        print(f"  Total files: {len(all_files)}")
+        print(f"  DICOM files: {len(dcm_files)}")
+        
+        # Show first few files
+        print(f"  First 5 files:")
+        for i, file in enumerate(all_files[:5]):
+            print(f"    {i+1}. {file}")
+        
+        # Check subdirectories
+        subdirs = []
+        for root, dirs, files in os.walk(dir_path):
+            if root != dir_path:
+                subdirs.append(os.path.relpath(root, dir_path))
+        
+        if subdirs:
+            print(f"  Subdirectories: {len(subdirs)}")
+            for subdir in subdirs[:5]:
+                print(f"    - {subdir}")
 
-    # -----------------------------
-    # Step 1: Collect DICOM files
-    # -----------------------------
-    inhale_files = collect_dicom_files(inhale_dir)
-    exhale_files = collect_dicom_files(exhale_dir)
+# Run inspection first
 
-    # -----------------------------
-    # Step 2: Select largest series
-    # -----------------------------
-    inhale_series = select_largest_series(inhale_files)
-    exhale_series = select_largest_series(exhale_files)
 
-    print(f"Selected inhale series with {len(inhale_series)} slices")
-    print(f"Selected exhale series with {len(exhale_series)} slices")
-
-    # -----------------------------
-    # Step 3: Load volumes
-    # -----------------------------
-    reader = sitk.ImageSeriesReader()
-    reader.SetFileNames(inhale_series)
-    inhale = reader.Execute()
-    reader.SetFileNames(exhale_series)
-    exhale = reader.Execute()
-
-    print(f"Original inhale shape: {inhale.GetSize()}, Exhale shape: {exhale.GetSize()}")
-
-    # -----------------------------
-    # Step 4: Cast to float32
-    # -----------------------------
-    inhale = sitk.Cast(inhale, sitk.sitkFloat32)
-    exhale = sitk.Cast(exhale, sitk.sitkFloat32)
-
-    # -----------------------------
-    # Step 5: Resample to isotropic spacing
-    # -----------------------------
-    inhale_resampled = resample_volume(inhale, target_spacing)
-    exhale_resampled = resample_volume(exhale, target_spacing)
-
-    print(f"Resampled inhale shape: {inhale_resampled.GetSize()}, Exhale shape: {exhale_resampled.GetSize()}")
-
-    # -----------------------------
-    # Step 6: Register exhale -> inhale
-    # -----------------------------
-    initial_transform = sitk.CenteredTransformInitializer(
-        inhale_resampled,
-        exhale_resampled,
-        sitk.Euler3DTransform(),
-        sitk.CenteredTransformInitializerFilter.GEOMETRY
-    )
-
-    registration = sitk.ImageRegistrationMethod()
-    registration.SetMetricAsMattesMutualInformation(50)
-    registration.SetInterpolator(sitk.sitkLinear)
-    registration.SetOptimizerAsGradientDescent(learningRate=1.0, numberOfIterations=50)
-    registration.SetInitialTransform(initial_transform, inPlace=False)
-
-    final_transform = registration.Execute(inhale_resampled, exhale_resampled)
-
-    exhale_registered = sitk.Resample(
-        exhale_resampled,
-        inhale_resampled,
-        final_transform,
-        sitk.sitkLinear,
-        -1000,
-        sitk.sitkFloat32
-    )
-
-    print("Registration complete.")
-    print(f"Inhale shape: {inhale_resampled.GetSize()}, Exhale registered shape: {exhale_registered.GetSize()}")
-
-    return inhale_resampled, exhale_registered
+# Additional debug function to check DICOM headers in detail
+def debug_dicom_physical_info(dicom_dir):
+    """Debug physical coordinate information in DICOM files"""
+    import pydicom
+    import os
+    
+    print(f"\n{'='*60}")
+    print(f"DEBUGGING PHYSICAL COORDINATES: {dicom_dir}")
+    print(f"{'='*60}")
+    
+    dicom_files = []
+    for root, dirs, files in os.walk(dicom_dir):
+        for file in files:
+            if file.lower().endswith('.dcm'):
+                dicom_files.append(os.path.join(root, file))
+    
+    if not dicom_files:
+        print("No DICOM files found!")
+        return
+    
+    # Check first and last files
+    for i, file_path in enumerate([dicom_files[0], dicom_files[-1]] if len(dicom_files) > 1 else [dicom_files[0]]):
+        print(f"\nFile {i+1}: {os.path.basename(file_path)}")
+        try:
+            ds = pydicom.dcmread(file_path, force=True)
+            
+            # Physical coordinates
+            if hasattr(ds, 'ImagePositionPatient'):
+                pos = [float(x) for x in ds.ImagePositionPatient]
+                print(f"  ImagePositionPatient: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]")
+            else:
+                print(f"  No ImagePositionPatient")
+            
+            if hasattr(ds, 'ImageOrientationPatient'):
+                orient = [float(x) for x in ds.ImageOrientationPatient]
+                print(f"  ImageOrientationPatient: {orient}")
+            
+            if hasattr(ds, 'SliceLocation'):
+                print(f"  SliceLocation: {float(ds.SliceLocation):.1f}")
+            
+            # Patient position
+            if hasattr(ds, 'PatientPosition'):
+                print(f"  PatientPosition: {ds.PatientPosition}")
+            
+            # Series info
+            if hasattr(ds, 'SeriesNumber'):
+                print(f"  SeriesNumber: {ds.SeriesNumber}")
+            if hasattr(ds, 'InstanceNumber'):
+                print(f"  InstanceNumber: {ds.InstanceNumber}")
+            
+            # Spacing
+            if hasattr(ds, 'PixelSpacing'):
+                print(f"  PixelSpacing: {[float(x) for x in ds.PixelSpacing]}")
+            if hasattr(ds, 'SliceThickness'):
+                print(f"  SliceThickness: {float(ds.SliceThickness)}")
+            
+        except Exception as e:
+            print(f"  Error reading file: {e}")
 
 def preprocess_for_registration(inhale_sitk, exhale_sitk):
     """
@@ -1019,6 +1579,7 @@ def main():
     # Step 1: Load paired scans
     print("\n1. Loading DICOM series...")
     inhale_sitk, exhale_sitk = load_paired_ct_scans(args.inhale_dir, args.exhale_dir)
+    inspect_dicom_directories( args.inhale_dir,  args.exhale_dir)
 
     print("\n2. Running diagnostics...")
     run_diagnostics(exhale_sitk, inhale_sitk)

@@ -1,0 +1,34 @@
+============================================================
+AIR TRAPPING ANALYSIS REPORT
+============================================================
+
+SUMMARY
+----------------------------------------
+This analysis quantifies air trapping in paired inspiratory/expiratory CT scans.
+Air trapping is defined as lung regions with HU < -856 on expiratory CT.
+
+KEY METRICS
+----------------------------------------
+1. Air Trapping Index (ATI): Percentage of lung volume with HU < -856 on expiration
+2. Normal range: ATI < 10%
+3. Clinical significance:
+   - <10%: Normal
+   - 10-20%: Mild (may be normal variant)
+   - 20-30%: Moderate (consider clinical correlation)
+   - >30%: Severe (likely abnormal)
+
+OUTPUT FILES
+----------------------------------------
+1. air_trapping_mask.nii.gz - Binary mask of air trapping regions
+2. lung_mask.nii.gz - Binary mask of lung tissue
+3. air_trapping_statistics.csv - Quantitative measurements
+4. slice_*_analysis.png - Representative slice visualizations
+5. histogram_analysis.png - HU distribution analysis
+6. 3d_visualization.png - 3D distribution of air trapping
+
+TECHNICAL NOTES
+----------------------------------------
+1. Registration: Images were aligned using physical DICOM coordinates
+2. Lung segmentation: Threshold-based (-1000 to -400 HU) with noise removal
+3. Air trapping definition: Standard clinical threshold of -856 HU
+4. Results should be interpreted in clinical context

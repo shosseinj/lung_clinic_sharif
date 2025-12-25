@@ -1,0 +1,23 @@
+Parameter,Value,Unit
+Patient ID,Unknown,
+Scan Date,Unknown,
+,,
+VOLUME MEASUREMENTS,,
+Total lung volume (exhale),11726.4,ml
+Total lung volume (inhale),11911.2,ml
+Volume ratio (inhale/exhale),1.016,
+,,
+AIR TRAPPING ANALYSIS,,
+Air trapping volume (HU < -856),7484.5,ml
+Air trapping index (ATI),63.8,%
+Air trapping volume (HU < -900),5568.7,ml
+Air trapping volume (HU < -950),2838.5,ml
+,,
+REGIONAL ANALYSIS,,
+Upper zone ATI,61.3,%
+Middle zone ATI,64.9,%
+Lower zone ATI,64.8,%
+,,
+CLINICAL INTERPRETATION,,
+ATI Category,Severe air trapping,
+Interpretation,Severe air trapping - likely abnormal,
