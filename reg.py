@@ -5,225 +5,6 @@ import matplotlib.pyplot as plt
 import os
 from lungmask import mask, LMInferer
 
-# def calculate_air_trapping(exhale_sitk, inhale_sitk, output_dir=None):
-#     """
-#     Calculate air trapping from registered inhale/exhale CT scans.
-    
-#     Air trapping is typically defined as:
-#     - Voxels with HU < -856 on expiratory CT
-#     - After excluding voxels that are also < -856 on inspiratory CT
-#     - Or more commonly: Voxels with HU < -950 on expiratory CT
-#       that are > -856 on inspiratory CT
-    
-#     Returns air trapping mask and statistics.
-#     """
-#     print("\n" + "="*60)
-#     print("AIR TRAPPING ANALYSIS")
-#     print("="*60)
-    
-#     # Convert to numpy arrays
-#     exhale_array = sitk.GetArrayFromImage(exhale_sitk)  # Shape: (Z, Y, X)
-#     inhale_array = sitk.GetArrayFromImage(inhale_sitk)
-    
-#     # Get spacing for volume calculations
-#     spacing = exhale_sitk.GetSpacing()
-#     voxel_volume_mm3 = spacing[0] * spacing[1] * spacing[2]  # mm³
-#     voxel_volume_ml = voxel_volume_mm3 / 1000.0  # ml
-    
-#     print(f"\nScan Information:")
-#     print(f"  Voxel dimensions: {exhale_array.shape}")
-#     print(f"  Voxel spacing: {spacing} mm")
-#     print(f"  Voxel volume: {voxel_volume_mm3:.3f} mm³ = {voxel_volume_ml:.6f} ml")
-#     print(f"  Total volume: {exhale_array.size * voxel_volume_ml:.1f} ml")
-    
-#     # -------------------------------------------------
-#     # 1. Lung segmentation (simplified)
-#     # -------------------------------------------------
-#     print(f"\n1. LUNG SEGMENTATION")
-    
-#     # Simple threshold-based lung segmentation
-#     # Typical lung tissue: -1000 to -400 HU
-#     lung_mask_exhale = (exhale_array > -1000) & (exhale_array < -400)
-#     lung_mask_inhale = (inhale_array > -1000) & (inhale_array < -400)
-    
-#     # Remove small connected components (noise)
-#     from scipy import ndimage
-    
-#     def clean_mask(mask, min_size=100):
-#         labeled_mask, num_features = ndimage.label(mask)
-#         component_sizes = ndimage.sum(mask, labeled_mask, range(1, num_features + 1))
-        
-#         # Keep only components larger than min_size
-#         for i in range(num_features):
-#             if component_sizes[i] < min_size:
-#                 mask[labeled_mask == (i + 1)] = False
-#         return mask
-    
-#     lung_mask_exhale = clean_mask(lung_mask_exhale, min_size=500)
-#     lung_mask_inhale = clean_mask(lung_mask_inhale, min_size=500)
-    
-#     lung_voxels_exhale = np.sum(lung_mask_exhale)
-#     lung_voxels_inhale = np.sum(lung_mask_inhale)
-    
-#     lung_volume_exhale = lung_voxels_exhale * voxel_volume_ml
-#     lung_volume_inhale = lung_voxels_inhale * voxel_volume_ml
-    
-#     print(f"  Exhale lung volume: {lung_volume_exhale:.1f} ml ({lung_voxels_exhale:,} voxels)")
-#     print(f"  Inhale lung volume: {lung_volume_inhale:.1f} ml ({lung_voxels_inhale:,} voxels)")
-#     print(f"  Volume ratio (inhale/exhale): {lung_volume_inhale/lung_volume_exhale:.3f}")
-    
-#     # -------------------------------------------------
-#     # 2. Air trapping calculation
-#     # -------------------------------------------------
-#     print(f"\n2. AIR TRAPPING CALCULATION")
-    
-#     # Common definitions from literature:
-#     # 1. Voxels with HU < -856 on expiratory CT (most common)
-#     # 2. Voxels with HU < -950 on expiratory AND HU > -856 on inspiratory
-#     # 3. Voxels with HU < -900 on expiratory
-    
-#     # We'll calculate using multiple definitions
-#     air_trapping_definitions = {
-#         'AT_856': (exhale_array < -856) & lung_mask_exhale,
-#         'AT_900': (exhale_array < -900) & lung_mask_exhale,
-#         'AT_950': (exhale_array < -950) & lung_mask_exhale,
-#         'AT_mixed': (exhale_array < -856) & (inhale_array > -950) & lung_mask_exhale,
-#     }
-    
-#     print(f"\n  Air trapping by different HU thresholds:")
-#     for name, mask in air_trapping_definitions.items():
-#         at_voxels = np.sum(mask)
-#         at_volume = at_voxels * voxel_volume_ml
-#         at_percentage = (at_voxels / lung_voxels_exhale * 100) if lung_voxels_exhale > 0 else 0
-        
-#         hu_threshold = name.split('_')[1]
-#         if hu_threshold == '856':
-#             print(f"    HU < -856: {at_volume:.1f} ml ({at_percentage:.1f}% of lung)")
-#         elif hu_threshold == '900':
-#             print(f"    HU < -900: {at_volume:.1f} ml ({at_percentage:.1f}% of lung)")
-#         elif hu_threshold == '950':
-#             print(f"    HU < -950: {at_volume:.1f} ml ({at_percentage:.1f}% of lung)")
-#         elif hu_threshold == 'mixed':
-#             print(f"    Mixed (exp<-856, insp>-950): {at_volume:.1f} ml ({at_percentage:.1f}% of lung)")
-    
-#     # Use the most common definition: HU < -856 on expiratory CT
-#     air_trapping_mask = air_trapping_definitions['AT_856']
-    
-#     # -------------------------------------------------
-#     # 3. Calculate air trapping index (ATI)
-#     # -------------------------------------------------
-#     ati_voxels = np.sum(air_trapping_mask)
-#     ati_volume = ati_voxels * voxel_volume_ml
-#     ati_percentage = (ati_voxels / lung_voxels_exhale * 100) if lung_voxels_exhale > 0 else 0
-    
-#     print(f"\n3. AIR TRAPPING INDEX (ATI) - Primary metric")
-#     print(f"   Definition: Voxels with HU < -856 on expiratory CT")
-#     print(f"   ATI volume: {ati_volume:.1f} ml")
-#     print(f"   ATI percentage: {ati_percentage:.1f}% of lung volume")
-    
-#     # Clinical interpretation
-#     print(f"\n4. CLINICAL INTERPRETATION")
-#     if ati_percentage < 10:
-#         print(f"   Normal: ATI < 10% ({ati_percentage:.1f}%)")
-#     elif ati_percentage < 20:
-#         print(f"   Mild air trapping: ATI 10-20% ({ati_percentage:.1f}%)")
-#     elif ati_percentage < 30:
-#         print(f"   Moderate air trapping: ATI 20-30% ({ati_percentage:.1f}%)")
-#     else:
-#         print(f"   Severe air trapping: ATI > 30% ({ati_percentage:.1f}%)")
-    
-#     # -------------------------------------------------
-#     # 4. Regional analysis (by lung zone)
-#     # -------------------------------------------------
-#     print(f"\n5. REGIONAL ANALYSIS")
-    
-#     # Divide lungs into upper, middle, lower zones
-#     num_slices = exhale_array.shape[0]
-#     zone_size = num_slices // 3
-    
-#     zones = {
-#         'Upper': slice(0, zone_size),
-#         'Middle': slice(zone_size, 2 * zone_size),
-#         'Lower': slice(2 * zone_size, num_slices)
-#     }
-    
-#     print(f"   Regional ATI distribution:")
-#     for zone_name, zone_slice in zones.items():
-#         zone_lung_mask = lung_mask_exhale[zone_slice]
-#         zone_at_mask = air_trapping_mask[zone_slice]
-        
-#         zone_lung_voxels = np.sum(zone_lung_mask)
-#         zone_at_voxels = np.sum(zone_at_mask)
-        
-#         if zone_lung_voxels > 0:
-#             zone_at_percentage = zone_at_voxels / zone_lung_voxels * 100
-#             print(f"     {zone_name} zone: {zone_at_percentage:.1f}%")
-#         else:
-#             print(f"     {zone_name} zone: No lung tissue")
-    
-#     # -------------------------------------------------
-#     # 5. Save results
-#     # -------------------------------------------------
-#     if output_dir:
-#         os.makedirs(output_dir, exist_ok=True)
-        
-#         print(f"\n6. SAVING RESULTS to {output_dir}")
-        
-#         # Save air trapping mask as SimpleITK image
-#         at_mask_sitk = sitk.GetImageFromArray(air_trapping_mask.astype(np.uint8))
-#         at_mask_sitk.SetSpacing(spacing)
-#         at_mask_sitk.SetOrigin(exhale_sitk.GetOrigin())
-        
-#         mask_path = os.path.join(output_dir, "air_trapping_mask.nii.gz")
-#         sitk.WriteImage(at_mask_sitk, mask_path)
-#         print(f"   Air trapping mask saved: {mask_path}")
-        
-#         # Save lung mask
-#         lung_mask_sitk = sitk.GetImageFromArray(lung_mask_exhale.astype(np.uint8))
-#         lung_mask_sitk.SetSpacing(spacing)
-#         lung_mask_sitk.SetOrigin(exhale_sitk.GetOrigin())
-        
-#         lung_mask_path = os.path.join(output_dir, "lung_mask.nii.gz")
-#         sitk.WriteImage(lung_mask_sitk, lung_mask_path)
-#         print(f"   Lung mask saved: {lung_mask_path}")
-        
-#         # Save statistics to CSV
-#         import csv
-#         stats_path = os.path.join(output_dir, "air_trapping_statistics.csv")
-#         with open(stats_path, 'w', newline='') as csvfile:
-#             writer = csv.writer(csvfile)
-#             writer.writerow(["Parameter", "Value", "Unit"])
-#             writer.writerow(["Total lung volume (exhale)", f"{lung_volume_exhale:.1f}", "ml"])
-#             writer.writerow(["Total lung volume (inhale)", f"{lung_volume_inhale:.1f}", "ml"])
-#             writer.writerow(["Volume ratio (inhale/exhale)", f"{lung_volume_inhale/lung_volume_exhale:.3f}", ""])
-#             writer.writerow(["Air trapping volume (HU < -856)", f"{ati_volume:.1f}", "ml"])
-#             writer.writerow(["Air trapping index (ATI)", f"{ati_percentage:.1f}", "%"])
-#             writer.writerow(["Air trapping volume (HU < -900)", 
-#                            f"{np.sum(air_trapping_definitions['AT_900']) * voxel_volume_ml:.1f}", "ml"])
-#             writer.writerow(["Air trapping volume (HU < -950)", 
-#                            f"{np.sum(air_trapping_definitions['AT_950']) * voxel_volume_ml:.1f}", "ml"])
-        
-#         print(f"   Statistics saved: {stats_path}")
-        
-#         # Create visualization
-#         create_visualization(exhale_array, inhale_array, 
-#                             lung_mask_exhale, air_trapping_mask,
-#                             output_dir, spacing)
-    
-#     # -------------------------------------------------
-#     # 6. Return results
-#     # -------------------------------------------------
-#     results = {
-#         'ati_percentage': ati_percentage,
-#         'ati_volume_ml': ati_volume,
-#         'lung_volume_exhale_ml': lung_volume_exhale,
-#         'lung_volume_inhale_ml': lung_volume_inhale,
-#         'air_trapping_mask': air_trapping_mask,
-#         'lung_mask': lung_mask_exhale,
-#         'voxel_volume_ml': voxel_volume_ml
-#     }
-    
-#     return results
 
 def create_visualization(exhale_array, inhale_array, lung_mask, at_mask, 
                         output_dir, spacing):
@@ -338,6 +119,63 @@ def create_slice_montage(ct_volume, at_mask, output_dir):
     plt.close()
     
     print(f"   Slice montage saved: {montage_path}")
+
+
+
+
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import SimpleITK as sitk
+import numpy as np
+
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import SimpleITK as sitk
+import numpy as np
+
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import SimpleITK as sitk
+
+def visualize_npy(inhale_volume, exhale_volume):
+
+
+
+
+    nz = inhale_volume.shape[0]  # number of slices
+    z = 0  # initial slice
+
+
+    # Create figure and axes
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    plt.subplots_adjust(bottom=0.15)
+
+    # Show first slice
+    im0 = axes[0].imshow(exhale_volume[z], cmap='gray')
+    axes[0].set_title(f"Exhale ")
+    axes[0].axis('off')
+
+    im1 = axes[1].imshow(inhale_volume[z], cmap='gray')
+    axes[1].set_title(f"Inhale ")
+    axes[1].axis('off')
+
+    # Add slider axis
+    ax_slider = plt.axes([0.2, 0.05, 0.6, 0.03])
+    slider = Slider(ax_slider, 'Slice', 0, nz - 1, valinit=z, valfmt='%0.0f')
+
+    # Update function
+    def update(val):
+        z_idx = int(slider.val)
+        im0.set_data(exhale_volume[z_idx])
+        axes[0].set_title(f"Exhale ")
+        im1.set_data(inhale_volume[z_idx])
+        axes[1].set_title(f"Inhale ")
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
+    plt.show()
+
+
 
 def load_paired_ct_scans(inhale_dir, exhale_dir):
     """
@@ -468,7 +306,7 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
                     'path': file_path,
                     'ds': ds,
                     'position': position,
-                    'instance': int(ds.InstanceNumber) if hasattr(ds, 'InstanceNumber') else len(slices)
+                    # 'instance': int(ds.InstanceNumber) if hasattr(ds, 'InstanceNumber') else len(slices)
                 })
                 
             except Exception as e:
@@ -481,8 +319,7 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
         print(f"  Successfully read {len(slices)} slices")
         
         # Sort by InstanceNumber or position
-        slices.sort(key=lambda x: x['instance'])
-        
+        slices.sort(key=lambda x: x['position'][2])
         # Get dimensions from first slice
         first_ds = slices[0]['ds']
         rows = int(first_ds.Rows)
@@ -605,125 +442,244 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
     print(f"  Translation offset (mm): {translation_mm}")
 
 
-    import ants, numpy as np, tempfile, os
-
-    print("\n" + "="*60)
-    print("ANTsPy FORCED 32 mm TRANSLATION")
-    print("="*60)
-
-    # ---------- convert SimpleITK → ANTs ----------
-    fixed_ants  = ants.from_numpy(sitk.GetArrayFromImage(exhale_sitk).astype('float32'),
-                                origin=exhale_sitk.GetOrigin(),
-                                spacing=exhale_sitk.GetSpacing(),
-                                direction=np.array(exhale_sitk.GetDirection()).reshape(3,3))
-
-    moving_ants = ants.from_numpy(sitk.GetArrayFromImage(inhale_sitk).astype('float32'),
-                                origin=inhale_sitk.GetOrigin(),
-                                spacing=inhale_sitk.GetSpacing(),
-                                direction=np.array(inhale_sitk.GetDirection()).reshape(3,3))
-
-    # ---------- build exact 4×4 translation matrix ----------
-    M = np.eye(4)
-    M[:3, 3] = -translation_needed          # 32 mm DOWN
-    aff_12 = M[:3, :].flatten('C')          # row-major 12 numbers
-
-    # ---------- write to temp file ----------
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        np.savetxt(f, aff_12, newline=' ')
-        aff_path = f.name
-
-    # ---------- apply matrix once ----------
-    inhale_ants_shifted = ants.apply_transforms(
-                            fixed_ants, moving_ants,
-                            transformlist=[aff_path],
-                            interpolator='linear')
-    inhale_ants_shifted = ants.resample_image_to_target(inhale_ants_shifted, fixed_ants)
-    os.unlink(aff_path)                       # clean up
-
-    # ---------- back to SimpleITK ----------
-    inhale_registered = sitk.GetImageFromArray(inhale_ants_shifted.numpy())
-    inhale_registered.SetOrigin(exhale_sitk.GetOrigin())
-    inhale_registered.SetSpacing(exhale_sitk.GetSpacing())
-    inhale_registered.SetDirection(exhale_sitk.GetDirection())
-
-    print("Forced 32 mm translation applied")
-
-    print("Forced 32 mm translation applied")
-
-    # ---------- back to SimpleITK ----------
-    inhale_registered = sitk.GetImageFromArray(inhale_ants_shifted.numpy())
-    inhale_registered.SetOrigin(exhale_sitk.GetOrigin())
-    inhale_registered.SetSpacing(exhale_sitk.GetSpacing())
-    inhale_registered.SetDirection(exhale_sitk.GetDirection())
-
-    print("Forced 32 mm translation applied")
-    print("Matrix used:", aff_12)          # <- NEW
-
-
-    print("ANTsPy translation finished")
-    # print("Estimated translation parameters:", reg['fwdtransforms'])
-
-    print("\n" + "="*60)
-    print("VERIFICATION")
-    print("="*60)
-    print(f"EXHALE (Fixed):")
-    print(f"  Origin: {exhale_sitk.GetOrigin()}")
-    print(f"  Spacing: {exhale_sitk.GetSpacing()}")
-    print(f"  Size: {exhale_sitk.GetSize()}")
-
-    print(f"\nINHALE (Registered):")
-    print(f"  Origin: {inhale_registered.GetOrigin()}")
-    print(f"  Spacing: {inhale_registered.GetSpacing()}")
-    print(f"  Size: {inhale_registered.GetSize()}")
-
-    # quick difference visual
-    # ex_arr  = sitk.GetArrayFromImage(exhale_sitk)
-    # in_arr  = sitk.GetArrayFromImage(inhale_registered)
-    # diff    = ex_arr.astype(np.int16) - in_arr.astype(np.int16)
-    # mid     = diff.shape[0]//2
-    # plt.imshow(diff[mid], cmap='seismic', vmin=-500, vmax=500)
-    # plt.colorbar(); plt.title('Exhale - Inhale (ANTs)'); plt.show()
-    return exhale_sitk, inhale_registered
-
-
-
-def run_visualization_sitk(exhale_sitk, inhale_registered):
-
-    fixed_arr = sitk.GetArrayFromImage(exhale_sitk )
-    moving_arr = sitk.GetArrayFromImage(inhale_registered)
-    
-    fig, axes = plt.subplots(2, 4, figsize=(12, 10))
-    
-    # Middle slices
-    mid_z = fixed_arr.shape[0] // 2
-    
-    axes[0,0].imshow(fixed_arr[mid_z], cmap='gray', vmin=-1000, vmax=200)
-    axes[0,0].set_title(f'Fixed (slice {mid_z})')
-    
-    axes[0,1].imshow(moving_arr[mid_z], cmap='gray', vmin=-1000, vmax=200)
-    axes[0,1].set_title(f'Moving (slice {mid_z})')
-    
  
+    import numpy as np
+    import SimpleITK as sitk
 
-    diff = fixed_arr[mid_z].astype(np.int16) - moving_arr[mid_z].astype(np.int16)
-    axes[0,2].imshow(diff, cmap='seismic', vmin=-500, vmax=500) 
-    axes[0,2].set_title('Exhale - Inhale '); 
+    import SimpleITK as sitk
+    import numpy as np
 
-    axes[0,3].imshow(fixed_arr[mid_z], cmap='gray', vmin=-1000, vmax=200, alpha=0.5)
-    axes[0,3].imshow(moving_arr[mid_z], cmap='hot', alpha=0.5)
-    axes[0,3].set_title('Overlay (Fixed gray, Moving hot)')
-    
-    # Histogram comparison
-    axes[1,3].hist(fixed_arr.flatten(), bins=100, alpha=0.5, label='Fixed', range=(-1200, 200))
-    axes[1,3].hist(moving_arr.flatten(), bins=100, alpha=0.5, label='Moving', range=(-1200, 200))
-    axes[1,3].set_title('HU Histogram Comparison')
-    axes[1,3].legend()
-    axes[1,3].set_xlabel('HU Value')
-    axes[1,3].set_ylabel('Frequency')
-    
-    plt.tight_layout()
-    plt.savefig('diagnostic_report.png', dpi=150)
-    plt.show()
+    def select_common_slices_sitk(inhale_sitk, exhale_sitk):
+        """
+        Select slices that have exactly the same ImagePositionPatient Z-coordinate
+        in inhale and exhale scans.
+        Returns:
+            exhale_volume: SimpleITK image with only matched slices
+            inhale_volume: SimpleITK image with only matched slices
+            pairs: list of (inhale_idx, exhale_idx)
+        """
+
+        # Function to get Z positions of slices using ImagePositionPatient
+        def get_slice_z_positions(img):
+            origin = np.array(img.GetOrigin())
+            spacing = np.array(img.GetSpacing())
+            direction = np.array(img.GetDirection()).reshape(3, 3)
+
+            z_positions = []
+            for k in range(img.GetSize()[2]):
+                index = np.array([0, 0, k])
+                physical = origin + direction @ (index * spacing)
+                z_positions.append(physical[2])
+            return np.array(z_positions)
+
+        # Get Z positions
+        z_inhale = get_slice_z_positions(inhale_sitk)
+        z_exhale = get_slice_z_positions(exhale_sitk)
+
+        # Find exact matches (tolerance 1 micron)
+        z_threshold = 0.8 # e.g., 1.5 mm tolerance
+
+# Find pairs where Z distance is below threshold
+        pairs = []
+        for i, z_i in enumerate(z_inhale):
+            # Find indices in exhale where distance is below threshold
+            matches = np.where(np.abs(z_exhale - z_i) <= z_threshold)[0]
+            if len(matches) > 0:
+                # Take the closest match
+                closest_j = matches[np.argmin(np.abs(z_exhale[matches] - z_i))]
+                pairs.append((i, closest_j))
+
+        print(f"Selected inhale-exhale pairs (threshold {z_threshold} mm):", pairs)
+        if len(pairs) == 0:
+            raise RuntimeError("No slices with matching Z positions found!")
+
+        # Extract slices
+        size_xy = [int(exhale_sitk.GetSize()[0]), int(exhale_sitk.GetSize()[1]), 1]  # Z=1 to extract one slice
+        
+        inhale_np_list = []
+        exhale_np_list = []
+
+        size_xy = [int(exhale_sitk.GetSize()[0]), int(exhale_sitk.GetSize()[1]), 1]  # single slice
+
+        for k, (i, j) in enumerate(pairs):
+            i = int(i)
+            j = int(j)
+            
+            # Extract slices
+            inhale_slice = sitk.Extract(inhale_sitk, size=size_xy, index=[0, 0, i])
+            exhale_slice = sitk.Extract(exhale_sitk, size=size_xy, index=[0, 0, j])
+            
+            # Cast to float32
+            inhale_slice = sitk.Cast(inhale_slice, sitk.sitkFloat32)
+            exhale_slice = sitk.Cast(exhale_slice, sitk.sitkFloat32)
+            
+            # Convert to NumPy
+            inhale_np = sitk.GetArrayFromImage(inhale_slice)[0]  # shape: (H, W)
+            exhale_np = sitk.GetArrayFromImage(exhale_slice)[0]
+            
+            # Append to lists
+            inhale_np_list.append(inhale_np)
+            exhale_np_list.append(exhale_np)
+            
+            # Plot side by side
+            # plt.figure(figsize=(10, 5))
+            
+            # plt.subplot(1, 2, 1)
+            # plt.imshow(inhale_np, cmap='gray')
+            # plt.title(f'Inhale slice {i}')
+            # plt.axis('off')
+            
+            # plt.subplot(1, 2, 2)
+            # plt.imshow(exhale_np, cmap='gray')
+            # plt.title(f'Exhale slice {j}')
+            # plt.axis('off')
+            
+            # plt.show()
+        inhale_np_array = np.stack(inhale_np_list)
+        exhale_np_array = np.stack(exhale_np_list)
+
+        # # Set proper spacing: X/Y from original, Z from original inhale
+        # spacing_xy = inhale_sitk.GetSpacing()[:2]
+        # spacing_z = inhale_sitk.GetSpacing()[2]
+        # inhale_volume.SetSpacing((spacing_xy[0], spacing_xy[1], spacing_z))
+        # exhale_volume.SetSpacing((spacing_xy[0], spacing_xy[1], spacing_z))
+
+        # # Copy origin and direction
+        # inhale_volume.SetOrigin(inhale_sitk.GetOrigin())
+        # inhale_volume.SetDirection(inhale_sitk.GetDirection())
+
+        # exhale_volume.SetOrigin(exhale_sitk.GetOrigin())
+        # exhale_volume.SetDirection(exhale_sitk.GetDirection())
+
+        return exhale_np_array, inhale_np_array, pairs
+
+
+    # -------------------------------------------
+    # Example usage:
+    # -------------------------------------------
+
+    exhale_registered, inhale_registered, pairs = select_common_slices_sitk(inhale_sitk, exhale_sitk)
+
+    # Print volume shapes
+    # print("Exhale volume shape (X, Y, Z):", exhale_registered.GetSize())
+    # print("Inhale volume shape (X, Y, Z):", inhale_registered.GetSize())
+
+    # Verify Z positions
+    # def get_slice_z_positions(img):
+    #     origin = np.array(img.GetOrigin())
+    #     spacing = np.array(img.GetSpacing())
+    #     direction = np.array(img.GetDirection()).reshape(3,3)
+    #     z_positions = []
+    #     for k in range(img.GetSize()[2]):
+    #         index = np.array([0,0,k])
+    #         physical = origin + direction @ (index * spacing)
+    #         z_positions.append(physical[2])
+    #     return np.array(z_positions)
+
+    # z_exhale = get_slice_z_positions(exhale_registered)
+    # z_inhale = get_slice_z_positions(inhale_registered)
+    # z_diff = z_exhale - z_inhale
+
+    # print("Z differences (Exhale - Inhale) per slice:", z_diff)
+    # print("All Z differences close to zero:", np.allclose(z_diff, 0, atol=1e-3))
+
+
+
+
+    # print("\n" + "="*60)
+    # print("ANTsPy FORCED 32 mm TRANSLATION")
+    # print("="*60)
+    # print("EXHALE")
+    # print("  Origin   :", exhale_sitk.GetOrigin())
+    # print("  Spacing  :", exhale_sitk.GetSpacing())
+    # print("  Direction:", exhale_sitk.GetDirection())
+
+    # print("\nINHALE")
+    # print("  Origin   :", inhale_sitk.GetOrigin())
+    # print("  Spacing  :", inhale_sitk.GetSpacing())
+    # print("  Direction:", inhale_sitk.GetDirection())
+    # resampler = sitk.ResampleImageFilter()
+    # resampler.SetReferenceImage(exhale_sitk)
+    # resampler.SetInterpolator(sitk.sitkLinear)
+    # resampler.SetTransform(sitk.Transform())   # identity
+    # resampler.SetDefaultPixelValue(-1000)
+
+    # inhale_registered = resampler.Execute(inhale_sitk)
+
+
+    # # ---------- convert SimpleITK → ANTs ----------
+    # fixed_ants  = ants.from_numpy(sitk.GetArrayFromImage(exhale_sitk).astype('float32'),
+    #                             origin=exhale_sitk.GetOrigin(),
+    #                             spacing=exhale_sitk.GetSpacing(),
+    #                             direction=np.array(exhale_sitk.GetDirection()).reshape(3,3))
+
+    # moving_ants = ants.from_numpy(sitk.GetArrayFromImage(inhale_sitk).astype('float32'),
+    #                             origin=inhale_sitk.GetOrigin(),
+    #                             spacing=inhale_sitk.GetSpacing(),
+    #                             direction=np.array(inhale_sitk.GetDirection()).reshape(3,3))
+
+    # # ---------- build exact 4×4 translation matrix ----------
+    # M = np.eye(4)
+    # M[:3, 3] = -translation_needed          # 32 mm DOWN
+    # aff_12 = M[:3, :].flatten('C')          # row-major 12 numbers
+
+    # # ---------- write to temp file ----------
+    # with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+    #     np.savetxt(f, aff_12, newline=' ')
+    #     aff_path = f.name
+
+    # # ---------- apply matrix once ----------
+    # inhale_ants_shifted = ants.apply_transforms(
+    #                         fixed_ants, moving_ants,
+    #                         transformlist=[aff_path],
+    #                         interpolator='linear')
+    # inhale_ants_shifted = ants.resample_image_to_target(inhale_ants_shifted, fixed_ants)
+    # os.unlink(aff_path)                       # clean up
+
+    # # ---------- back to SimpleITK ----------
+    # inhale_registered = sitk.GetImageFromArray(inhale_ants_shifted.numpy())
+    # inhale_registered = sitk.GetImageFromArray(inhale_ants_shifted.numpy())
+
+    # inhale_registered.SetOrigin(exhale_sitk.GetOrigin())
+    # inhale_registered.SetSpacing(exhale_sitk.GetSpacing())
+    # inhale_registered.SetDirection(exhale_sitk.GetDirection())
+    # inhale_registered.SetOrigin(exhale_sitk.GetOrigin())
+    # inhale_registered.SetSpacing(exhale_sitk.GetSpacing())
+    # inhale_registered.SetDirection(exhale_sitk.GetDirection())
+
+
+
+    # print("Forced 32 mm translation applied")
+    # # print("Matrix used:", aff_12)          # <- NEW
+
+
+    # print("ANTsPy translation finished")
+    # # print("Estimated translation parameters:", reg['fwdtransforms'])
+
+    # print("\n" + "="*60)
+    # print("VERIFICATION")
+    # print("="*60)
+    # print(f"exhale_registered (Fixed):")
+    # print(f"  Origin: {exhale_registered.GetOrigin()}")
+    # print(f"  Spacing: {exhale_registered.GetSpacing()}")
+    # print(f"  Size: {exhale_registered.GetSize()}")
+
+    # print(f"\inhale_registered (Registered):")
+    # print(f"  Origin: {inhale_registered.GetOrigin()}")
+    # print(f"  Spacing: {inhale_registered.GetSpacing()}")
+    # print(f"  Size: {inhale_registered.GetSize()}")
+
+    # # quick difference visual
+    # # ex_arr  = sitk.GetArrayFromImage(exhale_sitk)
+    # # in_arr  = sitk.GetArrayFromImage(inhale_registered)
+    # # diff    = ex_arr.astype(np.int16) - in_arr.astype(np.int16)
+    # # mid     = diff.shape[0]//2
+    # # plt.imshow(diff[mid], cmap='seismic', vmin=-500, vmax=500)
+    # # plt.colorbar(); plt.title('Exhale - Inhale (ANTs)'); plt.show()
+    visualize_npy(inhale_registered, exhale_registered)
+    return exhale_registered, inhale_registered
+
+
 
 
 
@@ -743,40 +699,8 @@ def run_visualization_sitk(exhale_sitk, inhale_registered):
 
 def run_diagnostics(fixed_arr, moving_arr):
     """Run comprehensive diagnostics on image alignment"""
-    # print("\n" + "="*60)
-    # print("COMPREHENSIVE DIAGNOSTICS")
-    # print("="*60)
-    
-    # # Basic info
-    # print(f"Fixed size: {fixed_sitk.GetSize()}, spacing: {fixed_sitk.GetSpacing()}")
-    # print(f"Moving size: {moving_sitk.GetSize()}, spacing: {moving_sitk.GetSpacing()}")
-    
-    # # Calculate centers
-    # fixed_origin = np.array(fixed_sitk.GetOrigin())
-    # moving_origin = np.array(moving_sitk.GetOrigin())
-    # fixed_spacing = np.array(fixed_sitk.GetSpacing())
-    # moving_spacing = np.array(moving_sitk.GetSpacing())
-    # fixed_size = np.array(fixed_sitk.GetSize())
-    # moving_size = np.array(moving_sitk.GetSize())
-    
-    # fixed_center = fixed_origin + (fixed_size * fixed_spacing) / 2
-    # moving_center = moving_origin + (moving_size * moving_spacing) / 2
-    
-    # distance = np.linalg.norm(fixed_center - moving_center)
-    # print(f"\nCenters are {distance:.1f}mm apart")
-    # print(f"Fixed center: {fixed_center}")
-    # print(f"Moving center: {moving_center}")
-    
-    # # Check if this is a HUGE misalignment
-    # if distance > 100:  # More than 10cm
-    #     print("⚠️  CRITICAL: Images are VERY far apart (>10cm)")
-    #     print("   This suggests wrong DICOM series or coordinate system error")
-    
-    # Create visual diagnostic
+ 
     import matplotlib.pyplot as plt
-    
-    # fixed_arr = sitk.GetArrayFromImage(fixed_sitk)
-    # moving_arr = sitk.GetArrayFromImage(moving_sitk)
     
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     
@@ -807,12 +731,6 @@ def run_diagnostics(fixed_arr, moving_arr):
     plt.show()
     
     print(f"\nDiagnostic report saved to: diagnostic_report.png")
-    
-    # Recommendation
-    # if distance > 50:
-    #     print("\n🔧 RECOMMENDATION: Manual translation needed")
-    #     translation_needed = fixed_center - moving_center
-    #     print(f"   Apply this translation to moving image: {translation_needed}")
 
 
 
@@ -825,7 +743,7 @@ import csv
 
 
 
-from lungmask import LMInferer   # pip install lungmask
+from lungmask import LMInferer  
 
 def run_segmentation(exhale_sitk, inhale_registered_sitk):
     """
@@ -839,7 +757,8 @@ def run_segmentation(exhale_sitk, inhale_registered_sitk):
     inferer = LMInferer()
 
     def seg_volume(sitk_img):
-        arr      = sitk.GetArrayFromImage(sitk_img)       
+        # arr      = sitk.GetArrayFromImage(sitk_img)  
+        arr = sitk_img     
         lung_out = np.zeros(arr.shape, dtype=np.float32)
         seg = inferer.apply(arr)                      
 
@@ -861,75 +780,8 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-# def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff):
 
-#     """
-#     2×4 interactive viewer – single slider
-#     Row-0: full images           Row-1: lung-only images
-#     """
-
-
-#     nz, ny, nx = fix.shape
-#     win        = (-1000, 200)
-
-#     # ---- lung-only arrays ----
-#     fix_lung  = np.where(fix_m, fix, -1000)
-#     diff_lung = np.where(fix_m, diff, 0)
-#     over_gray = np.full_like(fix, -1000, dtype=np.float32)
-#     over_gray[fix_m] = fix[fix_m]
-
-#     # ---------- 2×4 figure ----------
-#     fig, axes = plt.subplots(2, 4, figsize=(20, 10))
-#     plt.subplots_adjust(bottom=0.08, top=0.92, hspace=0.05, wspace=0.05)
-#     for ax in axes.ravel(): ax.axis('off')
-
-#     z = nz // 2
-#     titles = ['Exhale', 'Inhale', 'Exhale+mask', 'Difference',
-#               'Lung-only Exhale', 'Lung-only Inhale', 'Lung-only Diff', 'Lung-only Overlay']
-
-#     # ---------- row 0 ----------
-#     im0  = axes[0,0].imshow(fix[z], cmap='gray', vmin=win[0], vmax=win[1])
-#     im1  = axes[0,1].imshow(mov[z], cmap='gray', vmin=win[0], vmax=win[1])
-#     im2  = axes[0,2].imshow(fix[z], cmap='gray', vmin=win[0], vmax=win[1])
-#     im2m = axes[0,2].imshow(fix_m[z], cmap='Reds', alpha=0.4)
-#     im3  = axes[0,3].imshow(diff[z], cmap='seismic')
-
-#     # ---------- row 1  (FIXED: inhale lung-only) ----------
-#     im4  = axes[1,0].imshow(fix_lung[z], cmap='gray', vmin=win[0], vmax=win[1])
-#     mov_lung = np.where(mov_m, mov, -1000)              # ← inhale mask used
-#     im5  = axes[1,1].imshow(mov_lung[z], cmap='gray', vmin=win[0], vmax=win[1])
-#     im6  = axes[1,2].imshow(diff_lung[z], cmap='seismic')
-#     im7  = axes[1,3].imshow(over_gray[z], cmap='gray', vmin=win[0], vmax=win[1], alpha=0.6)
-#     im7m = axes[1,3].imshow(np.where(fix_m[z], mov[z], np.nan), cmap='hot', alpha=0.5)
-
-#     # titles only on top row
-#     for c, t in enumerate(titles[:4]): axes[0,c].set_title(t, fontsize=12)
-#     for c, t in enumerate(titles[4:]): axes[1,c].set_title(t, fontsize=12)
-
-#     # ---------- slider ----------
-#     ax_slider = fig.add_axes([0.2, 0.03, 0.5, 0.02])
-#     slider = Slider(ax_slider, 'Slice', 0, nz - 1, valinit=z, valfmt='%0.0f')
-
-#     def update(val):
-#         z = int(slider.val)
-#         # row 0
-#         im0.set_data(fix[z])
-#         im1.set_data(mov[z])
-#         im2.set_data(fix[z])
-#         im2m.set_data(fix_m[z])
-#         im3.set_data(diff[z])
-#         # row 1
-#         im4.set_data(fix_lung[z])
-#         im5.set_data(np.where(mov_m[z], mov[z], -1000))
-#         im6.set_data(diff_lung[z])
-#         im7.set_data(over_gray[z])
-#         im7m.set_array(np.where(fix_m[z], mov[z], np.nan))
-#         fig.canvas.draw_idle()
-
-#     slider.on_changed(update)
-#     plt.show()
-    
-def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff, at_mask, spacing):
+def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff, at_mask = None):
     """
     3-row × 4-column interactive viewer – single slider
     Row-0: full images           Row-1: lung-only images
@@ -940,7 +792,6 @@ def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff, at_mask, s
 
     nz, ny, nx = fix.shape
     win        = (-1000, 200)
-    voxel_ml   = np.prod(spacing) / 1000.0
 
     # ---------- masks & arrays ----------
     common_lung = fix_m | mov_m
@@ -980,14 +831,14 @@ def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff, at_mask, s
                             vmin=win[0], vmax=win[1])
 
     # ---------- row 2  –  AIR TRAPPING  ----------
-    im8  = axes[2,0].imshow(at_mask[z], cmap='hot')                            # binary mask
+    # im8  = axes[2,0].imshow(at_mask[z], cmap='hot')                            # binary mask
     im9  = axes[2,1].imshow(at_gray[z], cmap='gray', vmin=win[0], vmax=win[1]) # grey lung base
-    im9m = axes[2,1].imshow(at_hot[z], cmap='hot', alpha=0.8)                  # red = trap
+    # im9m = axes[2,1].imshow(at_hot[z], cmap='hot', alpha=0.8)                  # red = trap
     im10 = axes[2,2].imshow(np.where(common_lung[z], diff[z], 0),
                             cmap='seismic', vmin=-500, vmax=500)               # diff inside lung
     im11 = axes[2,3].imshow(at_gray[z], cmap='gray', vmin=win[0], vmax=win[1], alpha=0.7)
-    im11m= axes[2,3].imshow(np.where(at_mask[z], mov[z], np.nan),
-                            cmap='hot', alpha=0.7, vmin=win[0], vmax=win[1])   # hot = trap
+    # im11m= axes[2,3].imshow(np.where(at_mask[z], mov[z], np.nan),
+    #                         cmap='hot', alpha=0.7, vmin=win[0], vmax=win[1])   # hot = trap
 
     # titles only on top row
     for c, t in enumerate(titles[:4]): axes[0,c].set_title(t, fontsize=11)
@@ -1007,10 +858,10 @@ def run_interactive_segmentation_viewer(fix, mov, fix_m, mov_m, diff, at_mask, s
         im4.set_data(fix_lung[z]); im5.set_data(np.where(mov_m[z], mov[z], -1000))
         im6.set_data(diff_lung[z]); im7.set_data(over_gray[z]); im7m.set_array(np.where(fix_m[z], mov[z], np.nan))
         # row 2  –  air trapping
-        im8.set_data(at_mask[z])
-        im9.set_data(at_gray[z]); im9m.set_array(at_hot[z])
+        # im8.set_data(at_mask[z])
+        # im9.set_data(at_gray[z]); im9m.set_array(at_hot[z])
         im10.set_data(np.where(common_lung[z], diff[z], 0))
-        im11.set_data(at_gray[z]); im11m.set_array(np.where(at_mask[z], mov[z], np.nan))
+        # im11.set_data(at_gray[z]); im11m.set_array(np.where(at_mask[z], mov[z], np.nan))
         fig.canvas.draw_idle()
 
     slider.on_changed(update)
@@ -1081,28 +932,25 @@ def run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir="./air_trapping
     # run_visualization_sitk(exhale_sitk, inhale_registered_sitk)
     exhale_mask, exhale_lung, inhale_mask, inhale_lung = run_segmentation(exhale_sitk, inhale_registered_sitk)
     
-    fix    = sitk.GetArrayFromImage(exhale_sitk)
-    mov    = sitk.GetArrayFromImage(inhale_registered_sitk)
+    fix    = exhale_sitk
+    mov    = inhale_registered_sitk
+    # fix    = sitk.GetArrayFromImage(exhale_sitk)
+    # mov    = sitk.GetArrayFromImage(inhale_registered_sitk)
     fix_m  = exhale_mask.astype(bool)
     mov_m  = inhale_mask.astype(bool)
     diff   = fix.astype(np.int16) - mov.astype(np.int16)
-    spacing = exhale_sitk.GetSpacing() 
-    # results = calculate_air_trapping(fix, mov,
-    #                              exhale_mask.astype(bool),
-    #                              inhale_mask.astype(bool),
-    #                              spacing)
-    
-    # run_interactive_segmentation_viewer(fix,mov,fix_m, mov_m, diff )
+
+   
     
 
 
-    results = calculate_air_trapping(fix, mov, exhale_mask, inhale_mask, spacing)
+    # results = calculate_air_trapping(fix, mov, exhale_mask, inhale_mask)
     run_interactive_segmentation_viewer(fix, mov,
                                         exhale_mask.astype(bool),
                                         inhale_mask.astype(bool),
                                         diff,
-                                        results['at_mask'],
-                                        spacing)
+                                        # results['at_mask']
+                                        )
 
         # 2. Calculate air trapping
     print("\n2. ANALYZING AIR TRAPPING")
@@ -1113,8 +961,8 @@ def run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir="./air_trapping
 
 # Run the complete analysis
 if __name__ == "__main__":
-    inhale_dir = "./data/patient2/SR_2/"
-    exhale_dir = "./data/patient2/SR_3/"
+    inhale_dir = "./data/patient1/SR_2/"
+    exhale_dir = "./data/patient1/SR_3/"
     output_dir = "./air_trapping_results"
     
     results = run_air_trapping_analysis(inhale_dir, exhale_dir, output_dir)
