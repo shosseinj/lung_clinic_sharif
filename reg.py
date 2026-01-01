@@ -141,53 +141,87 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
 
-def visualize_npy(inhale_volume, exhale_volume, window_center=-600, window_width=1500):
-    """
-    Visualize inhale/exhale CT volumes slice by slice with a slider.
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 
-    Parameters:
-        inhale_volume: numpy array, shape (Z, H, W)
-        exhale_volume: numpy array, shape (Z, H, W)
-        window_center: int, HU center for windowing (lung ~ -600)
-        window_width: int, HU width for windowing (lung ~1500)
+
+def visualize_npy(
+    exhale_volume,
+    inhale_registered_volume,
+    inhale_original_volume,
+    window_center=-600,
+    window_width=1500,
+):
+    """
+    Visualize exhale / registered inhale / original inhale CT volumes slice by slice.
+
+    Volumes must be NumPy arrays with shape (Z, H, W)
     """
 
     def window_image(img, center, width):
         min_val = center - width / 2
         max_val = center + width / 2
         img = np.clip(img, min_val, max_val)
-        img = (img - min_val) / (max_val - min_val)  # normalize 0-1
+        img = (img - min_val) / (max_val - min_val)
         return img
 
-    nz = inhale_volume.shape[0]  # number of slices
-    z = 0  # initial slice
+    # Ensure same number of slices
+    nz = min(
+        exhale_volume.shape[0],
+        inhale_registered_volume.shape[0],
+        inhale_original_volume.shape[0],
+    )
 
-    # Create figure and axes
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    z0 = nz // 2  # start from middle slice
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     plt.subplots_adjust(bottom=0.15)
 
-    # Show first slice
-    im0 = axes[0].imshow(window_image(exhale_volume[z], window_center, window_width), cmap='gray')
-    axes[0].set_title(f"Exhale")
-    axes[0].axis('off')
+    im0 = axes[0].imshow(
+        window_image(exhale_volume[z0], window_center, window_width),
+        cmap="gray",
+    )
+    axes[0].set_title("Exhale (Fixed)")
+    axes[0].axis("off")
 
-    im1 = axes[1].imshow(window_image(inhale_volume[z], window_center, window_width), cmap='gray')
-    axes[1].set_title(f"Inhale")
-    axes[1].axis('off')
+    im1 = axes[1].imshow(
+        window_image(inhale_registered_volume[z0], window_center, window_width),
+        cmap="gray",
+    )
+    axes[1].set_title("Inhale (Registered)")
+    axes[1].axis("off")
 
-    # Add slider axis
-    ax_slider = plt.axes([0.2, 0.05, 0.6, 0.03])
-    slider = Slider(ax_slider, 'Slice', 0, nz - 1, valinit=z, valfmt='%0.0f')
+    im2 = axes[2].imshow(
+        window_image(inhale_original_volume[z0], window_center, window_width),
+        cmap="gray",
+    )
+    axes[2].set_title("Inhale (Original)")
+    axes[2].axis("off")
 
-    # Update function
+    # Slider
+    ax_slider = plt.axes([0.25, 0.05, 0.5, 0.03])
+    slider = Slider(
+        ax_slider,
+        "Slice (Z)",
+        0,
+        nz - 1,
+        valinit=z0,
+        valfmt="%0.0f",
+    )
+
     def update(val):
-        z_idx = int(slider.val)
-        im0.set_data(window_image(exhale_volume[z_idx], window_center, window_width))
-        im1.set_data(window_image(inhale_volume[z_idx], window_center, window_width))
+        z = int(slider.val)
+        im0.set_data(window_image(exhale_volume[z], window_center, window_width))
+        im1.set_data(window_image(inhale_registered_volume[z], window_center, window_width))
+        im2.set_data(window_image(inhale_original_volume[z], window_center, window_width))
         fig.canvas.draw_idle()
 
     slider.on_changed(update)
     plt.show()
+
+
+
 
 def select_common_slices_sitk(inhale_sitk, exhale_sitk):
     """
@@ -614,7 +648,7 @@ def load_paired_ct_scans(inhale_dir, exhale_dir):
     inhale_registered_np = inhale_registered_ants.numpy()
     exhale_np = fixed_ants.numpy()
 
-    visualize_npy(exhale_np, inhale_registered_np)
+    visualize_npy(exhale_np, inhale_registered_np, sitk.GetArrayFromImage(inhale_sitk).astype("float32"))
 
 
     exhale_registered, inhale_registered, pairs = select_common_slices_sitk(inhale_registered, exhale_sitk)
