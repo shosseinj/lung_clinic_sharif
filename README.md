@@ -23,3 +23,22 @@ The repository is intended as an experimental medical-image analysis workspace r
 
 Medical images may contain protected or identifying information in pixel data or DICOM metadata. A public research repository should contain only data that are explicitly permitted for public redistribution and have been appropriately de-identified. Raw clinical studies should otherwise be stored outside Git.
 
+
+
+## Goal
+
+The repository collects exploratory scripts for aligning thoracic CT volumes and deriving lobe- or air-trapping-oriented outputs for research analysis, not clinical decision-making.
+
+## Installation
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Medical-image registration can be memory intensive; confirm that the installed SimpleITK, NumPy, visualization, and DICOM dependencies match the script being used.
+
+## Working with the Repository
+
+The scripts are independent experiments rather than one packaged command. Begin with `print_meta.py` or `load_npy.py` to inspect an authorized, de-identified input; use `registration.py` or `reg.py` for alignment; and use the plotting/fragmentation scripts for derived outputs. Copy paths and parameters into a separate experiment record before execution. The tracked NIfTI files must not be assumed de-identified or redistributable without review.
